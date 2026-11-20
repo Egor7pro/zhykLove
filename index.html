@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>zhykLove — знакомства</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Регистрация -->
+  <div id="reg-screen">
+    <div class="logo">zhykLove</div>
+    <p class="reg-sub">Знакомься рядом — просто и весело</p>
+    <input id="reg-name" placeholder="Имя">
+    <input id="reg-age" type="number" placeholder="Возраст" min="18" max="99">
+    <select id="reg-gender">
+      <option value="">Твой пол...</option>
+      <option value="f">Девушка</option>
+      <option value="m">Парень</option>
+    </select>
+    <select id="reg-seeking">
+      <option value="">Я ищу...</option>
+      <option value="f">Девушек</option>
+      <option value="m">Парней</option>
+    </select>
+    <button class="btn-main" onclick="register()">Начать знакомиться</button>
+  </div>
+
+  <!-- Шапка -->
+  <header id="header" class="hidden">
+    <div class="logo logo-sm">zhykLove</div>
+    <div class="header-right">
+      <div class="header-coins" onclick="showScreen('profile')" title="Баланс монет">
+        💎 <span id="coins-count">0</span>
+      </div>
+      <div class="header-ava" id="header-ava" onclick="showScreen('profile')">🙂</div>
+    </div>
+  </header>
+
+  <!-- Главная: лента анкет -->
+  <div id="screen-home" class="screen hidden"></div>
+
+  <!-- Лайкнутые -->
+  <div id="screen-likes" class="screen hidden">
+    <h3 class="section">Твои лайки</h3>
+    <div id="likes-list"></div>
+  </div>
+
+  <!-- Чаты: список -->
+  <div id="screen-chats" class="screen hidden">
+    <h3 class="section">Чаты</h3>
+    <div id="chats-list"></div>
+  </div>
+
+  <!-- Чат: переписка -->
+  <div id="screen-chat" class="screen hidden">
+    <div id="chat-header">
+      <button id="back-btn" onclick="showScreen('chats')">←</button>
+      <div class="ava" id="chat-ava"></div>
+      <div>
+        <div style="font-weight:600" id="chat-name"></div>
+        <div style="font-size:12px;color:#999" id="chat-age"></div>
+      </div>
+    </div>
+
+    <div id="chat-box"></div>
+
+    <div id="chat-extra">
+      <button class="btn-ghost" onclick="openGifts()">🎁 Подарить подарок</button>
+    </div>
+
+    <div id="chat-input-row">
+      <input id="chat-input" placeholder="Сообщение..." maxlength="2000">
+      <button id="chat-send" onclick="sendMessage()">➤</button>
+    </div>
+
+    <div id="pay-wall" class="hidden">
+      <div class="paywall-note">
+        Бесплатный лимит символов закончился
+      </div>
+      <button class="btn-shop" onclick="showScreen('profile')">Купить монеты</button>
+      <button class="btn-vip" onclick="buyVip()">VIP — безлимит (1800 ₽/мес · 16800 ₽/год)</button>
+    </div>
+  </div>
+
+  <!-- Профиль -->
+  <div id="screen-profile" class="screen hidden">
+    <h3 class="section">Мой профиль</h3>
+    <div class="profile-card">
+      <div class="profile-ava" id="profile-ava">🙂</div>
+
+      <label class="photo-upload" for="photo-input">📷 Загрузить своё фото</label>
+      <input id="photo-input" type="file" accept="image/*" class="hidden">
+      <button class="btn-ghost photo-remove hidden" id="photo-remove" onclick="removePhoto()">Убрать фото</button>
+
+      <div class="ava-picker" id="ava-picker"></div>
+      <label class="p-label">Имя</label>
+      <input id="prof-name" maxlength="30">
+      <label class="p-label">Возраст</label>
+      <input id="prof-age" type="number" min="18" max="99">
+      <label class="p-label">Город</label>
+      <input id="prof-city" maxlength="30" placeholder="Например, Казань">
+      <label class="p-label">О себе</label>
+      <textarea id="prof-bio" maxlength="120" placeholder="Пара слов о себе..."></textarea>
+      <div class="bio-note" id="bio-count">0 / 120</div>
+      <button class="btn-main" onclick="saveProfile()">Сохранить</button>
+      <div class="filter-note" id="prof-note"></div>
+    </div>
+
+    <div class="stats">
+      <div class="stat">
+        <div class="stat-num" id="stat-likes">0</div>
+        <div class="stat-cap">лайков</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num" id="stat-matches">0</div>
+        <div class="stat-cap">мэтчей</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num" id="stat-chats">0</div>
+        <div class="stat-cap">чатов</div>
+      </div>
+    </div>
+
+    <!-- Магазин монет -->
+    <h3 class="section" style="margin-top:20px">Магазин монет</h3>
+    <div class="shop-box">
+      <div class="coins-row">💎 Баланс: <b id="shop-coins">0</b> монет</div>
+      <div class="coins-row"><span class="hint">1 монета — 15 символов · 25 ₽</span></div>
+
+      <div class="quick-buy">
+        <button class="btn-shop" onclick="buyCoins(10)">10 монет — 250 ₽</button>
+        <button class="btn-shop" onclick="buyCoins(50)">50 монет — 1250 ₽</button>
+        <button class="btn-shop" onclick="buyCoins(100)">100 монет — 2500 ₽</button>
+      </div>
+
+      <div class="custom-buy">
+        <input id="buy-custom" type="number" min="10" placeholder="Своё количество (от 10)">
+        <button class="btn-main" onclick="buyCustom()">Купить</button>
+      </div>
+
+      <div class="vip-box">
+        <div class="vip-title">VIP — безлимитные сообщения</div>
+        <div class="vip-sub">Пишите сколько угодно, пока активна подписка</div>
+        <button class="btn-vip" onclick="buyVip()">Месяц — 1800 ₽</button>
+        <button class="btn-vip" onclick="buyVip()">Год — 16800 ₽</button>
+      </div>
+    </div>
+
+    <h3 class="section" style="margin-top:20px">Фильтр поиска</h3>
+    <div class="filter-box">
+      <label>Кого ищем</label>
+      <select id="flt-seeking">
+        <option value="f">Девушек</option>
+        <option value="m">Парней</option>
+      </select>
+      <label>Город</label>
+      <select id="flt-city">
+        <option value="">Любой</option>
+        <option value="Казань">Казань</option>
+        <option value="Москва">Москва</option>
+        <option value="Питер">Питер</option>
+      </select>
+      <label>Возраст: от и до</label>
+      <div class="ages">
+        <input id="flt-min" type="number" placeholder="от 18" min="18" max="99">
+        <input id="flt-max" type="number" placeholder="до 99" min="18" max="99">
+      </div>
+      <button class="btn-main" style="margin-top:16px" onclick="applyFilter()">Применить</button>
+      <div class="filter-note" id="flt-note"></div>
+    </div>
+
+    <button class="btn-logout" onclick="logout()">Выйти из аккаунта</button>
+  </div>
+
+  <!-- Попап совпадения -->
+  <div id="match-modal" class="modal hidden">
+    <div class="modal-box">
+      <div class="modal-hearts">💜</div>
+      <h2>Это взаимно!</h2>
+      <p id="match-text"></p>
+      <button class="btn-main" onclick="closeMatch()">Написать сообщение</button>
+      <button class="btn-ghost" onclick="closeMatch(true)">Позже</button>
+    </div>
+  </div>
+
+  <!-- Попап подарков -->
+  <div id="gift-modal" class="modal hidden">
+    <div class="modal-box">
+      <h2>🎁 Подарок</h2>
+      <p id="gift-to"></p>
+
+      <div id="gift-list">
+        <div class="gift-item" data-id="car"  onclick="pickGift('car')"><span class="gift-emoji">🚗</span><span>Машина</span><span class="gift-price">2500 ₽</span></div>
+        <div class="gift-item" data-id="ring" onclick="pickGift('ring')"><span class="gift-emoji">💍</span><span>Кольцо</span><span class="gift-price">200 ₽</span></div>
+        <div class="gift-item" data-id="rose" onclick="pickGift('rose')"><span class="gift-emoji">🌹</span><span>Роза</span><span class="gift-price">20 ₽</span></div>
+      </div>
+
+      <div class="gift-qty-row">
+        <button class="qty-btn" onclick="changeQty(-1)">−</button>
+        <span id="gift-qty">1</span>
+        <button class="qty-btn" onclick="changeQty(1)">+</button>
+      </div>
+
+      <div class="gift-total" id="gift-total">Выберите подарок</div>
+
+      <button class="btn-main" onclick="sendGift()">Оплатить и подарить</button>
+      <button class="btn-ghost" onclick="closeGift()">Отмена</button>
+    </div>
+  </div>
+
+  <nav class="hidden" id="nav">
+    <button id="nav-home" class="nav-button active" onclick="showScreen('home')">🔥</button>
+    <button id="nav-likes" class="nav-button" onclick="showScreen('likes')">❤️<span class="badge hidden" id="likes-badge"></span></button>
+    <button id="nav-chats" class="nav-button" onclick="showScreen('chats')">💬<span class="badge hidden" id="chats-badge"></span></button>
+    <button id="nav-profile" class="nav-button" onclick="showScreen('profile')">👤</button>
+  </nav>
+
+  <script src="script.js"></script>
+</body>
+</html>
