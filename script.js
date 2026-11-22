@@ -1,3 +1,9 @@
+// ---- Supabase (добавлено) ----
+const SUPA_URL = 'https://oxykfzxszgfjkyyzjudz.supabase.co';
+const SUPA_KEY = 'sb_publishable_pMoqaaTItSB1tnrKCsBK-A_92rSvWd1';
+const sb = supabase.createClient(SUPA_URL, SUPA_KEY);
+let currentUser = null;
+
 // ---- Демо-анкеты ----
 const USERS = [
   { id:1, name:'Алина', age:23, city:'Казань', bio:'Люблю кофе и спонтанные поездки 🚗', emoji:'👩‍🦰', gender:'f', km:2 },
@@ -11,24 +17,27 @@ const REPLIES = ['Привет! Как дела? 😊', 'Классный про
 const AVATARS = ['🙂','😎','🦊','🐱','🐼','🦄','🎃','🌟','🚀','🎧','🌸','🔥'];
 
 // ---- Настройки монетизации ----
-const FREE_CHARS = 20;        // бесплатные символы после регистрации
-const CHARS_PER_COIN = 15;    // 1 монета покрывает 15 символов сообщения
-const COIN_PRICE = 25;        // рублей за 1 монету
-const MIN_PACK = 10;          // минимум монет за одну покупку
-const VIP_MONTH_PRICE = 1800; // VIP месяц — безлимит
-const VIP_YEAR_PRICE = 16800; // VIP год — безлимит
-const PHOTO_MAX = 400;        // максимальная сторона фото при сжатии
+const FREE_CHARS = 20;
+const CHARS_PER_COIN = 15;
+const COIN_PRICE = 25;
+const MIN_PACK = 10;
+const VIP_MONTH_PRICE = 1800;
+const VIP_YEAR_PRICE = 16800;
+const PHOTO_MAX = 400;
 
-// ---- Подарки (оплата рублями напрямую) ----
+// ---- Подарки ----
 const GIFTS = [
   { id: 'car',  name: 'машина', emoji: '🚗', price: 2500 },
   { id: 'ring', name: 'кольцо', emoji: '💍', price: 200 },
   { id: 'rose', name: 'роза',   emoji: '🌹', price: 20 },
 ];
 
-// ---- Состояние ----
+// ---- Состояние (изменено: ключ теперь привязан к аккаунту) ----
 const STATE_VERSION = 9;
-const STATE_KEY = 'zhyklove_v' + STATE_VERSION;
+
+function stateKey() {
+  return 'zhyklove_v' + STATE_VERSION + '_' + (currentUser ? currentUser.id : 'guest');
+}
 
 function defaultState() {
   return {
@@ -46,12 +55,14 @@ function defaultState() {
   };
 }
 
-function loadState() {
+let state = defaultState();
+
+function loadStateForUser() {
   try {
-    const raw = localStorage.getItem(STATE_KEY);
+    const raw = localStorage.getItem(stateKey());
     if (!raw) return null;
     const s = JSON.parse(raw);
-    if (s.me && (!s.me.seeking || !s.me.gender)) return null;
+    if (!s.me) return null;
     if (!s.filters) s.filters = { city: '', min: 18, max: 99 };
     if (s.coins === undefined) s.coins = 0;
     if (s.freeCharsLeft === undefined) s.freeCharsLeft = FREE_CHARS;
@@ -59,9 +70,14 @@ function loadState() {
   } catch { return null; }
 }
 
-let state = loadState() || defaultState();
-const save = () => localStorage.setItem(STATE_KEY, JSON.stringify(state));
+const save = () => localStorage.setItem(stateKey(), JSON.stringify(state));
 let currentChat = null;
+
+// ---- Переключение регистрация/вход (добавлено) ----
+function toggleAuth(showLogin) {
+  document.getElementById('reg-fields').classList.toggle('hidden', showLogin);
+  document.getElementById('login-fields').classList.toggle('hidden', !showLogin);
+}
 
 // ---- VIP ----
 function vipActive() {
@@ -76,7 +92,7 @@ function vipActive() {
   return true;
 }
 
-// ---- Стоимость сообщения: 1 монета = 15 символов ----
+// ---- Стоимость сообщения ----
 function messageCost(chars) {
   if (vipActive()) return { covered: chars, coins: 0 };
   const free = Math.min(chars, state.freeCharsLeft);
@@ -84,7 +100,6 @@ function messageCost(chars) {
   return { covered: free, coins: Math.ceil(rest / CHARS_PER_COIN) };
 }
 
-// ---- Paywall и счётчики ----
 function limitsExhausted() {
   if (vipActive()) return false;
   return state.freeCharsLeft <= 0;
@@ -99,9 +114,7 @@ function updateCoinsUI() {
   if (shop) shop.textContent = state.coins;
 }
 
-// ---- Демо-оплата рублями ----
-// Здесь вместо реального шлюза — подтверждение.
-// При переходе на сервер заменить на создание платежа в ЮKassa/Stripe.
+// ---- Демо-оплата ----
 function payRub(amount, description, onPaid) {
   const ok = confirm(
     `Оплата: ${description}\nСумма: ${amount} ₽\n\n` +
@@ -110,7 +123,7 @@ function payRub(amount, description, onPaid) {
   if (ok) onPaid();
 }
 
-// ---- Аватар: фото или эмодзи ----
+// ---- Аватар ----
 function renderAva(element) {
   if (state.me.photo) {
     element.innerHTML = `<img src="${state.me.photo}" alt="Аватар">`;
@@ -124,7 +137,6 @@ function updateAvas() {
   renderAva(document.getElementById('profile-ava'));
 }
 
-// Загружаем и сжимаем фото до 400px, сохраняем как JPEG
 function handlePhoto(event) {
   const file = event.target.files && event.target.files[0];
   event.target.value = '';
@@ -162,15 +174,72 @@ function removePhoto() {
   document.getElementById('photo-remove').classList.add('hidden');
 }
 
-// ---- Регистрация ----
-function register() {
+// ---- Регистрация (изменено: теперь через Supabase) ----
+async function register() {
+  const email = document.getElementById('reg-email').value.trim();
+  const pass = document.getElementById('reg-pass').value;
   const name = document.getElementById('reg-name').value.trim();
   const age = +document.getElementById('reg-age').value;
   const gender = document.getElementById('reg-gender').value;
   const seeking = document.getElementById('reg-seeking').value;
+
   if (!name || !age || age < 18 || !gender || !seeking) return alert('Заполните все поля (18+)');
+  if (!email || !email.includes('@')) return alert('Укажите корректный email');
+  if (pass.length < 6) return alert('Пароль — минимум 6 символов');
+
+  const { data, error } = await sb.auth.signUp({ email, password: pass });
+  if (error) return alert('Ошибка регистрации: ' + error.message);
+
+  // Если сессии нет — включено подтверждение почты
+  if (!data.session) {
+    return alert('Письмо с подтверждением отправлено на ' + email +
+      '. Подтвердите почту и войдите через кнопку «Войти».');
+  }
+
+  currentUser = data.user;
+
+  // Сохраняем анкету в базу
+  const { error: dbErr } = await sb.from('profiles').upsert({
+    id: currentUser.id,
+    name, age, gender, seeking,
+    city: '', bio: '', emoji: '🙂'
+  });
+  if (dbErr) console.warn('Профиль не сохранён в базу:', dbErr.message);
+
+  state = defaultState();
   state.me = { name, age, gender, seeking, city: '', bio: '', emoji: '🙂', photo: null };
   state.freeCharsLeft = FREE_CHARS;
+  save();
+  enterApp();
+}
+
+// ---- Вход (добавлено) ----
+async function login() {
+  const email = document.getElementById('login-email').value.trim();
+  const pass = document.getElementById('login-pass').value;
+  if (!email || !pass) return alert('Введите email и пароль');
+
+  const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
+  if (error) return alert('Не удалось войти: ' + error.message);
+
+  currentUser = data.user;
+  state = loadStateForUser();
+
+  if (!state || !state.me) {
+    // Анкеты в localStorage нет — подтягиваем из базы
+    const { data: p } = await sb.from('profiles').select('*').eq('id', currentUser.id).maybeSingle();
+    state = defaultState();
+    state.me = {
+      name: (p && p.name) || email.split('@')[0],
+      age: (p && p.age) || 18,
+      gender: (p && p.gender) || 'f',
+      seeking: (p && p.seeking) || 'f',
+      city: (p && p.city) || '',
+      bio: (p && p.bio) || '',
+      emoji: (p && p.emoji) || '🙂',
+      photo: null
+    };
+  }
   save();
   enterApp();
 }
@@ -185,11 +254,16 @@ function enterApp() {
   updateCoinsUI();
 }
 
+// ---- Выход (изменено: теперь и из Supabase) ----
 function logout() {
   if (!confirm('Точно выйти? Лайки и чаты будут удалены.')) return;
-  localStorage.removeItem(STATE_KEY);
+  sb.auth.signOut();
+  localStorage.removeItem(stateKey());
+  currentUser = null;
   state = defaultState();
   document.getElementById('reg-screen').classList.remove('hidden');
+  document.getElementById('reg-fields').classList.remove('hidden');
+  document.getElementById('login-fields').classList.add('hidden');
   document.getElementById('nav').classList.add('hidden');
   document.getElementById('header').classList.add('hidden');
   ['home','likes','chats','chat','profile'].forEach(x =>
@@ -299,7 +373,7 @@ function renderLikes() {
   }).join('');
 }
 
-// ---- Фильтр (внутри профиля) ----
+// ---- Фильтр ----
 function renderFilter() {
   document.getElementById('flt-seeking').value = state.me.seeking;
   document.getElementById('flt-city').value = state.filters.city || '';
@@ -365,7 +439,8 @@ function pickAva(e) {
     s.classList.toggle('sel', s.textContent === e));
 }
 
-function saveProfile() {
+// (изменено: профиль сохраняется и в базу Supabase)
+async function saveProfile() {
   const name = document.getElementById('prof-name').value.trim();
   const age = +document.getElementById('prof-age').value;
   const bio = document.getElementById('prof-bio').value;
@@ -382,13 +457,26 @@ function saveProfile() {
   state.me.city = document.getElementById('prof-city').value.trim();
   state.me.bio = bio.trim();
   save();
+
+  if (currentUser) {
+    await sb.from('profiles').upsert({
+      id: currentUser.id,
+      name: state.me.name,
+      age: state.me.age,
+      gender: state.me.gender,
+      seeking: state.me.seeking,
+      city: state.me.city,
+      bio: state.me.bio,
+      emoji: state.me.emoji
+    });
+  }
   document.getElementById('prof-note').textContent = 'Профиль сохранён ✅';
 }
 
 document.getElementById('prof-bio').addEventListener('input', updateBioCount);
 document.getElementById('photo-input').addEventListener('change', handlePhoto);
 
-// ---- Магазин монет (демо-оплата рублями) ----
+// ---- Магазин монет ----
 function buyCoins(n) {
   n = Math.floor(+n);
   if (!n || n < MIN_PACK) return alert(`Минимум для покупки — ${MIN_PACK} монет`);
@@ -439,7 +527,7 @@ function buyVip() {
   }
 }
 
-// ---- Подарки (оплата рублями напрямую) ----
+// ---- Подарки ----
 let gift = { id: null, qty: 1 };
 
 function openGifts() {
@@ -555,7 +643,6 @@ function sendMessage() {
   const chars = text.length;
   const cost = messageCost(chars);
 
-  // Не хватает монет на неоплаченную часть
   if (cost.coins > state.coins) {
     const need = cost.coins - state.coins;
     if (!confirm(
@@ -592,5 +679,29 @@ document.getElementById('chat-input').addEventListener('keydown', e => {
   if (e.key === 'Enter') sendMessage();
 });
 
-// ---- Старт ----
-if (state.me) enterApp();
+// ---- Старт (изменено: проверяем сессию Supabase) ----
+(async () => {
+  const { data } = await sb.auth.getSession();
+  const session = data && data.session;
+  if (session) {
+    currentUser = session.user;
+    state = loadStateForUser();
+    if (!state || !state.me) {
+      const { data: p } = await sb.from('profiles').select('*').eq('id', currentUser.id).maybeSingle();
+      state = defaultState();
+      if (p) {
+        state.me = {
+          name: p.name || 'Без имени',
+          age: p.age || 18,
+          gender: p.gender || 'f',
+          seeking: p.seeking || 'f',
+          city: p.city || '',
+          bio: p.bio || '',
+          emoji: p.emoji || '🙂',
+          photo: null
+        };
+      }
+    }
+    if (state.me) enterApp();
+  }
+})();

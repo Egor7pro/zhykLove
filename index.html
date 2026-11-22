@@ -8,23 +8,38 @@
 </head>
 <body>
 
-  <!-- Регистрация -->
+  <!-- Регистрация / Вход -->
   <div id="reg-screen">
     <div class="logo">zhykLove</div>
     <p class="reg-sub">Знакомься рядом — просто и весело</p>
-    <input id="reg-name" placeholder="Имя">
-    <input id="reg-age" type="number" placeholder="Возраст" min="18" max="99">
-    <select id="reg-gender">
-      <option value="">Твой пол...</option>
-      <option value="f">Девушка</option>
-      <option value="m">Парень</option>
-    </select>
-    <select id="reg-seeking">
-      <option value="">Я ищу...</option>
-      <option value="f">Девушек</option>
-      <option value="m">Парней</option>
-    </select>
-    <button class="btn-main" onclick="register()">Начать знакомиться</button>
+
+    <!-- Форма регистрации -->
+    <div id="reg-fields">
+      <input id="reg-email" type="email" placeholder="Email">
+      <input id="reg-pass" type="password" placeholder="Пароль (мин. 6 символов)">
+      <input id="reg-name" placeholder="Имя">
+      <input id="reg-age" type="number" placeholder="Возраст" min="18" max="99">
+      <select id="reg-gender">
+        <option value="">Твой пол...</option>
+        <option value="f">Девушка</option>
+        <option value="m">Парень</option>
+      </select>
+      <select id="reg-seeking">
+        <option value="">Я ищу...</option>
+        <option value="f">Девушек</option>
+        <option value="m">Парней</option>
+      </select>
+      <button class="btn-main" onclick="register()">Начать знакомиться</button>
+      <button class="btn-ghost" onclick="toggleAuth(true)">Уже есть аккаунт? Войти</button>
+    </div>
+
+    <!-- Форма входа -->
+    <div id="login-fields" class="hidden">
+      <input id="login-email" type="email" placeholder="Email">
+      <input id="login-pass" type="password" placeholder="Пароль">
+      <button class="btn-main" onclick="login()">Войти</button>
+      <button class="btn-ghost" onclick="toggleAuth(false)">Создать новый аккаунт</button>
+    </div>
   </div>
 
   <!-- Шапка -->
@@ -217,6 +232,7 @@
     <button id="nav-profile" class="nav-button" onclick="showScreen('profile')">👤</button>
   </nav>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="script.js"></script>
 </body>
 </html>
