@@ -1,20 +1,43 @@
-// ---- Supabase (добавлено) ----
+// ---- Supabase ----
 const SUPA_URL = 'https://oxykfzxszgfjkyyzjudz.supabase.co';
 const SUPA_KEY = 'sb_publishable_pMoqaaTItSB1tnrKCsBK-A_92rSvWd1';
 const sb = supabase.createClient(SUPA_URL, SUPA_KEY);
 let currentUser = null;
 
+// Реальные анкеты из базы
+let dbProfiles = [];
+
+async function loadProfiles() {
+  const { data, error } = await sb.from('profiles').select('*');
+  if (error) { console.warn('Не удалось загрузить анкеты:', error.message); return; }
+  dbProfiles = (data || []).map(p => ({
+    id: p.id,
+    name: p.name || 'Без имени',
+    age: p.age || 18,
+    country: p.country || '',
+    region: p.region || '',
+    city: p.city || 'Не указан',
+    bio: p.bio || '',
+    gender: p.gender,
+    km: null
+  }));
+}
+
+// Аватар: первая буква имени (если нет фото)
+function avaInitial(name) {
+  return (name || '?').trim().charAt(0).toUpperCase() || '?';
+}
+
 // ---- Демо-анкеты ----
 const USERS = [
-  { id:1, name:'Алина', age:23, city:'Казань', bio:'Люблю кофе и спонтанные поездки 🚗', emoji:'👩‍🦰', gender:'f', km:2 },
-  { id:2, name:'Дина', age:25, city:'Казань', bio:'Танцую, читаю, готовлю лучший борщ 🍲', emoji:'💃', gender:'f', km:5 },
-  { id:3, name:'Марат', age:27, city:'Казань', bio:'IT, гитара и настолки 🎸', emoji:'🧑‍💻', gender:'m', km:3 },
-  { id:4, name:'Соня', age:22, city:'Казань', bio:'Ищу компанию на концерт 🎤', emoji:'🙋‍♀️', gender:'f', km:8 },
-  { id:5, name:'Артур', age:29, city:'Казань', bio:'Бегаю по утрам, мечтаю о марафоне 🏃', emoji:'🏋️', gender:'m', km:12 },
-  { id:6, name:'Лейла', age:24, city:'Москва', bio:'Фотограф. Давай на красивый кадр 📸', emoji:'📷', gender:'f', km:720 },
+  { id:1, name:'Алина', age:23, city:'Казань', bio:'Люблю кофе и спонтанные поездки 🚗', gender:'f', km:2 },
+  { id:2, name:'Дина', age:25, city:'Казань', bio:'Танцую, читаю, готовлю лучший борщ 🍲', gender:'f', km:5 },
+  { id:3, name:'Марат', age:27, city:'Казань', bio:'IT, гитара и настолки 🎸', gender:'m', km:3 },
+  { id:4, name:'Соня', age:22, city:'Казань', bio:'Ищу компанию на концерт 🎤', gender:'f', km:8 },
+  { id:5, name:'Артур', age:29, city:'Казань', bio:'Бегаю по утрам, мечтаю о марафоне 🏃', gender:'m', km:12 },
+  { id:6, name:'Лейла', age:24, city:'Москва', bio:'Фотограф. Давай на красивый кадр 📸', gender:'f', km:720 },
 ];
-const REPLIES = ['Привет! Как дела? 😊', 'Классный профиль!', 'Чем занимаешься на выходных?', 'Кофе или чай? ☕'];
-const AVATARS = ['🙂','😎','🦊','🐱','🐼','🦄','🎃','🌟','🚀','🎧','🌸','🔥'];
+const REPLIES = ['Привет! Как дела? 😊', 'Классный профиль!', 'Чем занят(а) на выходных?', 'Кофе или чай? ☕'];
 
 // ---- Настройки монетизации ----
 const FREE_CHARS = 20;
@@ -25,15 +48,18 @@ const VIP_MONTH_PRICE = 1800;
 const VIP_YEAR_PRICE = 16800;
 const PHOTO_MAX = 400;
 
-// ---- Подарки ----
+// ---- Подарки (демо-оплата) ----
 const GIFTS = [
-  { id: 'car',  name: 'машина', emoji: '🚗', price: 2500 },
-  { id: 'ring', name: 'кольцо', emoji: '💍', price: 200 },
-  { id: 'rose', name: 'роза',   emoji: '🌹', price: 20 },
+  { id: 'heart', name: 'сердечко', emoji: '❤️', price: 125000 },
+  { id: 'yacht', name: 'яхта',     emoji: '🛥️', price: 14700 },
+  { id: 'bed',   name: 'кровать',  emoji: '🛏️', price: 4500 },
+  { id: 'car',   name: 'машина',   emoji: '🚗', price: 2600 },
+  { id: 'ring',  name: 'кольцо',   emoji: '💍', price: 400 },
+  { id: 'rose',  name: 'роза',     emoji: '🌹', price: 25 },
 ];
 
-// ---- Состояние (изменено: ключ теперь привязан к аккаунту) ----
-const STATE_VERSION = 9;
+// ---- Состояние ----
+const STATE_VERSION = 11;
 
 function stateKey() {
   return 'zhyklove_v' + STATE_VERSION + '_' + (currentUser ? currentUser.id : 'guest');
@@ -55,6 +81,15 @@ function defaultState() {
   };
 }
 
+function defaultMe() {
+  return {
+    name: '', age: 18, gender: 'f', seeking: 'f',
+    country: 'Россия', region: '', city: '',
+    goal: 'flirt', marital: 'single', smoke: 'no', drink: 'no',
+    bio: '', photo: null
+  };
+}
+
 let state = defaultState();
 
 function loadStateForUser() {
@@ -63,6 +98,11 @@ function loadStateForUser() {
     if (!raw) return null;
     const s = JSON.parse(raw);
     if (!s.me) return null;
+    s.me = Object.assign(defaultMe(), s.me);
+    // id везде храним строками — иначе демо-анкеты ломают поиск
+    s.seen = (s.seen || []).map(String);
+    s.likes = (s.likes || []).map(String);
+    s.matches = (s.matches || []).map(String);
     if (!s.filters) s.filters = { city: '', min: 18, max: 99 };
     if (s.coins === undefined) s.coins = 0;
     if (s.freeCharsLeft === undefined) s.freeCharsLeft = FREE_CHARS;
@@ -73,7 +113,12 @@ function loadStateForUser() {
 const save = () => localStorage.setItem(stateKey(), JSON.stringify(state));
 let currentChat = null;
 
-// ---- Переключение регистрация/вход (добавлено) ----
+// ---- Поиск анкеты по id (строковое сравнение) ----
+function findPerson(id) {
+  return allPeople().find(x => String(x.id) === String(id));
+}
+
+// ---- Переключение регистрация/вход ----
 function toggleAuth(showLogin) {
   document.getElementById('reg-fields').classList.toggle('hidden', showLogin);
   document.getElementById('login-fields').classList.toggle('hidden', !showLogin);
@@ -117,18 +162,18 @@ function updateCoinsUI() {
 // ---- Демо-оплата ----
 function payRub(amount, description, onPaid) {
   const ok = confirm(
-    `Оплата: ${description}\nСумма: ${amount} ₽\n\n` +
+    `Оплата: ${description}\nСумма: ${amount.toLocaleString('ru-RU')} ₽\n\n` +
     `(демо-оплата — реальный платёжный шлюз не подключён)`
   );
   if (ok) onPaid();
 }
 
-// ---- Аватар ----
+// ---- Аватар: фото или первая буква имени ----
 function renderAva(element) {
   if (state.me.photo) {
     element.innerHTML = `<img src="${state.me.photo}" alt="Аватар">`;
   } else {
-    element.textContent = state.me.emoji;
+    element.textContent = avaInitial(state.me.name);
   }
 }
 
@@ -174,7 +219,7 @@ function removePhoto() {
   document.getElementById('photo-remove').classList.add('hidden');
 }
 
-// ---- Регистрация (изменено: теперь через Supabase) ----
+// ---- Регистрация ----
 async function register() {
   const email = document.getElementById('reg-email').value.trim();
   const pass = document.getElementById('reg-pass').value;
@@ -190,7 +235,6 @@ async function register() {
   const { data, error } = await sb.auth.signUp({ email, password: pass });
   if (error) return alert('Ошибка регистрации: ' + error.message);
 
-  // Если сессии нет — включено подтверждение почты
   if (!data.session) {
     return alert('Письмо с подтверждением отправлено на ' + email +
       '. Подтвердите почту и войдите через кнопку «Войти».');
@@ -198,22 +242,17 @@ async function register() {
 
   currentUser = data.user;
 
-  // Сохраняем анкету в базу
-  const { error: dbErr } = await sb.from('profiles').upsert({
-    id: currentUser.id,
-    name, age, gender, seeking,
-    city: '', bio: '', emoji: '🙂'
-  });
-  if (dbErr) console.warn('Профиль не сохранён в базу:', dbErr.message);
-
   state = defaultState();
-  state.me = { name, age, gender, seeking, city: '', bio: '', emoji: '🙂', photo: null };
+  state.me = Object.assign(defaultMe(), { name, age, gender, seeking });
   state.freeCharsLeft = FREE_CHARS;
   save();
+
+  saveProfileToDb();
+  await loadProfiles();
   enterApp();
 }
 
-// ---- Вход (добавлено) ----
+// ---- Вход ----
 async function login() {
   const email = document.getElementById('login-email').value.trim();
   const pass = document.getElementById('login-pass').value;
@@ -226,21 +265,25 @@ async function login() {
   state = loadStateForUser();
 
   if (!state || !state.me) {
-    // Анкеты в localStorage нет — подтягиваем из базы
     const { data: p } = await sb.from('profiles').select('*').eq('id', currentUser.id).maybeSingle();
     state = defaultState();
-    state.me = {
-      name: (p && p.name) || email.split('@')[0],
-      age: (p && p.age) || 18,
-      gender: (p && p.gender) || 'f',
-      seeking: (p && p.seeking) || 'f',
-      city: (p && p.city) || '',
-      bio: (p && p.bio) || '',
-      emoji: (p && p.emoji) || '🙂',
-      photo: null
-    };
+    state.me = Object.assign(defaultMe(), p ? {
+      name: p.name || email.split('@')[0],
+      age: p.age || 18,
+      gender: p.gender || 'f',
+      seeking: p.seeking || 'f',
+      country: p.country || 'Россия',
+      region: p.region || '',
+      city: p.city || '',
+      goal: p.goal || 'flirt',
+      marital: p.marital || 'single',
+      smoke: p.smoke || 'no',
+      drink: p.drink || 'no',
+      bio: p.bio || ''
+    } : { name: email.split('@')[0] });
   }
   save();
+  await loadProfiles();
   enterApp();
 }
 
@@ -254,13 +297,14 @@ function enterApp() {
   updateCoinsUI();
 }
 
-// ---- Выход (изменено: теперь и из Supabase) ----
+// ---- Выход ----
 function logout() {
   if (!confirm('Точно выйти? Лайки и чаты будут удалены.')) return;
   sb.auth.signOut();
   localStorage.removeItem(stateKey());
   currentUser = null;
   state = defaultState();
+  dbProfiles = [];
   document.getElementById('reg-screen').classList.remove('hidden');
   document.getElementById('reg-fields').classList.remove('hidden');
   document.getElementById('login-fields').classList.add('hidden');
@@ -278,10 +322,10 @@ function showScreen(s) {
     const b = document.getElementById('nav-' + x);
     if (b) b.classList.toggle('active', x === s);
   });
-  if (s === 'home') renderHome();
+  if (s === 'home') loadProfiles().then(renderHome);
   if (s === 'likes') renderLikes();
   if (s === 'chats') renderChats();
-  if (s === 'profile') { renderProfile(); renderFilter(); }
+  if (s === 'profile') renderProfile();
   if (s === 'chat') updateCoinsUI();
   updateBadges();
 }
@@ -296,13 +340,20 @@ function updateBadges() {
   else cb.classList.add('hidden');
 }
 
-// ---- Фильтр анкет ----
+// ---- Лента анкет ----
+function allPeople() {
+  const myId = currentUser && currentUser.id;
+  const real = dbProfiles.filter(p => p.id !== myId);
+  return [...real, ...USERS];
+}
+
 function candidates() {
   const f = state.filters;
-  return USERS.filter(u => !state.me.seeking || u.gender === state.me.seeking)
-    .filter(u => !f.city || u.city === f.city)
-    .filter(u => u.age >= f.min && u.age <= f.max)
-    .filter(u => !state.seen.includes(u.id));
+  return allPeople()
+    .filter(u => u.id && !state.seen.includes(String(u.id)))
+    .filter(u => !state.me.seeking || u.gender === state.me.seeking)
+    .filter(u => !f.city || (u.city || '').toLowerCase().includes(f.city.toLowerCase()))
+    .filter(u => u.age >= f.min && u.age <= f.max);
 }
 
 // ---- Главная ----
@@ -310,14 +361,16 @@ function renderHome() {
   const box = document.getElementById('screen-home');
   const list = candidates();
   if (!list.length) {
-    box.innerHTML = '<div class="empty">Анкеты закончились 🎉<br>Попробуй ослабить фильтр в профиле 👤</div>';
+    box.innerHTML = `
+      <div class="empty">Анкеты закончились 🎉</div>
+      <button class="btn-main" style="margin-top:16px" onclick="restartFeed()">🔄 Смотреть заново</button>`;
     return;
   }
   const u = list[0];
   box.innerHTML = `
     <div class="card">
-      <div class="photo">${u.emoji}</div>
-      <div class="distance">📍 ${u.km} км от тебя</div>
+      <div class="photo">${avaInitial(u.name)}</div>
+      ${u.km ? `<div class="distance">📍 ${u.km} км от тебя</div>` : ''}
       <div class="info"><h2>${u.name}, ${u.age}</h2><p>${u.city} · ${u.bio}</p></div>
     </div>
     <div class="actions">
@@ -328,13 +381,21 @@ function renderHome() {
 
 function swipe(like) {
   const u = candidates()[0];
-  state.seen.push(u.id);
+  if (!u) return;
+  state.seen.push(String(u.id));
   if (like) {
-    state.likes.push(u.id);
-    if (!state.matches.includes(u.id)) state.matches.push(u.id);
-    if (!state.chats[u.id]) state.chats[u.id] = [];
-    openMatch(u.id);
+    const uid = String(u.id);
+    state.likes.push(uid);
+    if (!state.matches.includes(uid)) state.matches.push(uid);
+    if (!state.chats[uid]) state.chats[uid] = [];
+    openMatch(uid);
   }
+  save();
+  renderHome();
+}
+
+function restartFeed() {
+  state.seen = [];
   save();
   renderHome();
 }
@@ -343,7 +404,7 @@ function swipe(like) {
 let matchUserId = null;
 function openMatch(id) {
   matchUserId = id;
-  const u = USERS.find(x => x.id === id);
+  const u = findPerson(id);
   document.getElementById('match-text').textContent = 'Вы с ' + u.name + ' совпали! Напишите первым 😉';
   document.getElementById('match-modal').classList.remove('hidden');
 }
@@ -356,16 +417,16 @@ function closeMatch(gotoChat) {
 // ---- Лайкнутые ----
 function renderLikes() {
   const box = document.getElementById('likes-list');
-  const list = state.likes.map(id => USERS.find(u => u.id === id)).filter(Boolean);
+  const list = state.likes.map(id => findPerson(id)).filter(Boolean);
   if (!list.length) {
     box.innerHTML = '<div class="empty">Пока никто не лайкнут.<br>Ставь ❤ на главной!</div>';
     return;
   }
   box.innerHTML = list.map(u => {
-    const isMatch = state.matches.includes(u.id);
+    const isMatch = state.matches.includes(String(u.id));
     return `
-    <div class="person-row" onclick="${isMatch ? `openChat(${u.id})` : ''}">
-      <div class="ava">${u.emoji}</div>
+    <div class="person-row" onclick="${isMatch ? `openChat('${u.id}')` : ''}">
+      <div class="ava">${avaInitial(u.name)}</div>
       <div><div class="name">${u.name}, ${u.age}</div>
       <div class="sub">${u.city}</div></div>
       <div class="tag ${isMatch ? 'match' : 'wait'}">${isMatch ? 'Взаимно 💜' : 'Ждёт ответа'}</div>
@@ -383,20 +444,22 @@ function renderFilter() {
 }
 function applyFilter() {
   const seeking = document.getElementById('flt-seeking').value;
-  const city = document.getElementById('flt-city').value;
+  const city = document.getElementById('flt-city').value.trim();
   let min = +document.getElementById('flt-min').value || 18;
   let max = +document.getElementById('flt-max').value || 99;
   if (min > max) [min, max] = [max, min];
   state.me.seeking = seeking;
   state.filters = { city, min, max };
   save();
+  saveProfileToDb();
   updateFilterNote();
   showScreen('home');
 }
 function updateFilterNote() {
   const f = state.filters;
-  const n = USERS.filter(u => u.gender === state.me.seeking)
-    .filter(u => !f.city || u.city === f.city)
+  const n = allPeople()
+    .filter(u => u.gender === state.me.seeking)
+    .filter(u => !f.city || (u.city || '').toLowerCase().includes(f.city.toLowerCase()))
     .filter(u => u.age >= f.min && u.age <= f.max).length;
   document.getElementById('flt-note').textContent = `Под фильтр попадает анкет: ${n}`;
 }
@@ -407,14 +470,19 @@ function renderProfile() {
   renderAva(document.getElementById('profile-ava'));
   document.getElementById('prof-name').value = me.name;
   document.getElementById('prof-age').value = me.age;
+  document.getElementById('prof-country').value = me.country || 'Россия';
+  document.getElementById('prof-region').value = me.region || '';
   document.getElementById('prof-city').value = me.city || '';
+  document.getElementById('prof-gender').value = me.gender;
+  document.getElementById('prof-seeking').value = me.seeking;
+  document.getElementById('prof-goal').value = me.goal || 'flirt';
+  document.getElementById('prof-marital').value = me.marital || 'single';
+  document.getElementById('prof-smoke').value = me.smoke || 'no';
+  document.getElementById('prof-drink').value = me.drink || 'no';
   document.getElementById('prof-bio').value = me.bio || '';
   document.getElementById('prof-note').textContent = '';
   updateBioCount();
   document.getElementById('photo-remove').classList.toggle('hidden', !me.photo);
-  const picker = document.getElementById('ava-picker');
-  picker.innerHTML = AVATARS.map(e =>
-    `<span class="${!me.photo && e === me.emoji ? 'sel' : ''}" onclick="pickAva('${e}')">${e}</span>`).join('');
   document.getElementById('stat-likes').textContent = state.likes.length;
   document.getElementById('stat-matches').textContent = state.matches.length;
   document.getElementById('stat-chats').textContent =
@@ -429,17 +497,27 @@ function updateBioCount() {
   note.classList.toggle('warn', bio.value.length > 100);
 }
 
-function pickAva(e) {
-  state.me.emoji = e;
-  state.me.photo = null;
-  save();
-  updateAvas();
-  document.getElementById('photo-remove').classList.add('hidden');
-  document.querySelectorAll('#ava-picker span').forEach(s =>
-    s.classList.toggle('sel', s.textContent === e));
+async function saveProfileToDb() {
+  if (!currentUser) return;
+  const me = state.me;
+  await sb.from('profiles').upsert({
+    id: currentUser.id,
+    name: me.name,
+    age: me.age,
+    gender: me.gender,
+    seeking: me.seeking,
+    country: me.country,
+    region: me.region,
+    city: me.city,
+    goal: me.goal,
+    marital: me.marital,
+    smoke: me.smoke,
+    drink: me.drink,
+    bio: me.bio,
+    emoji: avaInitial(me.name)
+  });
 }
 
-// (изменено: профиль сохраняется и в базу Supabase)
 async function saveProfile() {
   const name = document.getElementById('prof-name').value.trim();
   const age = +document.getElementById('prof-age').value;
@@ -452,24 +530,24 @@ async function saveProfile() {
     document.getElementById('prof-note').textContent = 'О себе — не больше 120 символов';
     return;
   }
-  state.me.name = name;
-  state.me.age = age;
-  state.me.city = document.getElementById('prof-city').value.trim();
-  state.me.bio = bio.trim();
+  const me = state.me;
+  me.name = name;
+  me.age = age;
+  me.country = document.getElementById('prof-country').value;
+  me.region = document.getElementById('prof-region').value.trim();
+  me.city = document.getElementById('prof-city').value.trim();
+  me.gender = document.getElementById('prof-gender').value;
+  me.seeking = document.getElementById('prof-seeking').value;
+  me.goal = document.getElementById('prof-goal').value;
+  me.marital = document.getElementById('prof-marital').value;
+  me.smoke = document.getElementById('prof-smoke').value;
+  me.drink = document.getElementById('prof-drink').value;
+  me.bio = bio.trim();
   save();
 
-  if (currentUser) {
-    await sb.from('profiles').upsert({
-      id: currentUser.id,
-      name: state.me.name,
-      age: state.me.age,
-      gender: state.me.gender,
-      seeking: state.me.seeking,
-      city: state.me.city,
-      bio: state.me.bio,
-      emoji: state.me.emoji
-    });
-  }
+  await saveProfileToDb();
+  await loadProfiles();
+  updateAvas();
   document.getElementById('prof-note').textContent = 'Профиль сохранён ✅';
 }
 
@@ -531,16 +609,26 @@ function buyVip() {
 let gift = { id: null, qty: 1 };
 
 function openGifts() {
-  if (currentChat === null) return;
-  const u = USERS.find(x => x.id === currentChat);
-  if (!u) return;
+  if (currentChat === null) return alert('Открой чат с человеком, которому хочешь подарить');
+  const u = findPerson(currentChat);
+  if (!u) return alert('Не удалось найти получателя подарка');
   gift = { id: null, qty: 1 };
   document.getElementById('gift-to').textContent = `Кому: ${u.name}`;
   document.getElementById('gift-qty').textContent = '1';
   document.getElementById('gift-total').textContent = 'Выберите подарок';
-  document.querySelectorAll('#gift-list .gift-item').forEach(el =>
-    el.classList.remove('sel'));
+  renderGiftList();
   document.getElementById('gift-modal').classList.remove('hidden');
+}
+
+function renderGiftList() {
+  const box = document.getElementById('gift-list');
+  if (!box) return;
+  box.innerHTML = GIFTS.map(g => `
+    <div class="gift-item ${gift.id === g.id ? 'sel' : ''}" data-id="${g.id}" onclick="pickGift('${g.id}')">
+      <span class="gift-emoji">${g.emoji}</span>
+      <span>${g.name}</span>
+      <span class="gift-price">${g.price.toLocaleString('ru-RU')} ₽</span>
+    </div>`).join('');
 }
 
 function closeGift() {
@@ -549,8 +637,9 @@ function closeGift() {
 
 function pickGift(id) {
   gift.id = id;
-  document.querySelectorAll('#gift-list .gift-item').forEach(el =>
-    el.classList.toggle('sel', el.dataset.id === id));
+  gift.qty = 1;
+  document.getElementById('gift-qty').textContent = '1';
+  renderGiftList();
   updateGiftTotal();
 }
 
@@ -563,20 +652,22 @@ function changeQty(delta) {
 
 function updateGiftTotal() {
   const g = GIFTS.find(x => x.id === gift.id);
+  if (!g) return;
   document.getElementById('gift-total').textContent =
-    `Итого: ${g.price * gift.qty} ₽`;
+    `Итого: ${(g.price * gift.qty).toLocaleString('ru-RU')} ₽ (${gift.qty} шт.)`;
 }
 
 function sendGift() {
-  if (!gift.id) return alert('Сначала выберите подарок');
+  if (!gift.id) return alert('Сначала выберите подарок в списке');
   const g = GIFTS.find(x => x.id === gift.id);
   const total = g.price * gift.qty;
-  const u = USERS.find(x => x.id === currentChat);
+  const u = findPerson(currentChat);
+  if (!u) return alert('Не удалось найти получателя подарка');
 
   payRub(total, `${g.emoji} ${g.name} × ${gift.qty} для ${u.name}`, () => {
-    state.chats[currentChat].push({
+    state.chats[String(currentChat)].push({
       me: true,
-      text: `${g.emoji} Подарил(а) ${u.name}: ${g.name} × ${gift.qty} (оплачено ${total} ₽)`
+      text: `${g.emoji} Подарил(а) ${u.name}: ${g.name} × ${gift.qty} (оплачено ${total.toLocaleString('ru-RU')} ₽)`
     });
     save();
     closeGift();
@@ -585,11 +676,11 @@ function sendGift() {
 
     setTimeout(() => {
       const thanks = [
-        `${g.emoji} Спасибо! Это мой любимый подарок! 💜`,
-        `${g.emoji} Ого, как мило! Спасибо 💜`,
+        `${g.emoji} Спасибо! Это лучший подарок! 💜`,
+        `${g.emoji} Ого, как щедро! Спасибо 💜`,
         `${g.emoji} Вы меня балуете! Спасибо 😊`
       ];
-      state.chats[currentChat].push({ me: false, text: thanks[Math.floor(Math.random() * thanks.length)] });
+      state.chats[String(currentChat)].push({ me: false, text: thanks[Math.floor(Math.random() * thanks.length)] });
       save();
       if (currentChat !== null) renderChat();
       updateBadges();
@@ -600,17 +691,17 @@ function sendGift() {
 // ---- Чаты ----
 function renderChats() {
   const box = document.getElementById('chats-list');
-  const list = state.matches.map(id => USERS.find(u => u.id === id)).filter(Boolean);
+  const list = state.matches.map(id => findPerson(id)).filter(Boolean);
   if (!list.length) {
     box.innerHTML = '<div class="empty">Пока пусто. Ставьте ❤ на главной!</div>';
     return;
   }
   box.innerHTML = list.map(u => {
-    const msgs = state.chats[u.id] || [];
+    const msgs = state.chats[String(u.id)] || [];
     const last = msgs.length ? msgs[msgs.length-1].text : 'Напишите первым ✍️';
     return `
-    <div class="person-row" onclick="openChat(${u.id})">
-      <div class="ava">${u.emoji}</div>
+    <div class="person-row" onclick="openChat('${u.id}')">
+      <div class="ava">${avaInitial(u.name)}</div>
       <div><div class="name">${u.name}, ${u.age}</div>
       <div class="sub">${last.length > 28 ? last.slice(0, 28) + '…' : last}</div></div>
     </div>`;
@@ -618,19 +709,21 @@ function renderChats() {
 }
 
 function openChat(id) {
-  currentChat = id;
+  currentChat = String(id);
   showScreen('chat');
-  const u = USERS.find(x => x.id === id);
-  document.getElementById('chat-ava').textContent = u.emoji;
+  const u = findPerson(currentChat);
+  if (!u) return;
+  document.getElementById('chat-ava').textContent = avaInitial(u.name);
   document.getElementById('chat-name').textContent = u.name;
   document.getElementById('chat-age').textContent = u.city;
+  if (!state.chats[currentChat]) state.chats[currentChat] = [];
   renderChat();
   updateCoinsUI();
 }
 
 function renderChat() {
   const box = document.getElementById('chat-box');
-  box.innerHTML = state.chats[currentChat].map(m =>
+  box.innerHTML = (state.chats[currentChat] || []).map(m =>
     `<div class="msg ${m.me ? 'me' : 'them'}">${m.text}</div>`).join('');
   box.scrollTop = box.scrollHeight;
 }
@@ -679,28 +772,31 @@ document.getElementById('chat-input').addEventListener('keydown', e => {
   if (e.key === 'Enter') sendMessage();
 });
 
-// ---- Старт (изменено: проверяем сессию Supabase) ----
+// ---- Старт ----
 (async () => {
   const { data } = await sb.auth.getSession();
   const session = data && data.session;
   if (session) {
     currentUser = session.user;
+    await loadProfiles();
     state = loadStateForUser();
     if (!state || !state.me) {
       const { data: p } = await sb.from('profiles').select('*').eq('id', currentUser.id).maybeSingle();
       state = defaultState();
-      if (p) {
-        state.me = {
-          name: p.name || 'Без имени',
-          age: p.age || 18,
-          gender: p.gender || 'f',
-          seeking: p.seeking || 'f',
-          city: p.city || '',
-          bio: p.bio || '',
-          emoji: p.emoji || '🙂',
-          photo: null
-        };
-      }
+      state.me = Object.assign(defaultMe(), p ? {
+        name: p.name || 'Без имени',
+        age: p.age || 18,
+        gender: p.gender || 'f',
+        seeking: p.seeking || 'f',
+        country: p.country || 'Россия',
+        region: p.region || '',
+        city: p.city || '',
+        goal: p.goal || 'flirt',
+        marital: p.marital || 'single',
+        smoke: p.smoke || 'no',
+        drink: p.drink || 'no',
+        bio: p.bio || ''
+      } : { name: 'Без имени' });
     }
     if (state.me) enterApp();
   }
