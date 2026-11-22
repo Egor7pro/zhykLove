@@ -23,6 +23,7 @@ async function loadProfiles() {
     city: p.city || 'Не указан',
     bio: p.bio || '',
     gender: p.gender,
+    photo: p.photo || null,
     km: null
   }));
   console.log('Загружено анкет из базы:', dbProfiles.length);
@@ -31,6 +32,14 @@ async function loadProfiles() {
 // Аватар: первая буква имени (если нет фото)
 function avaInitial(name) {
   return (name || '?').trim().charAt(0).toUpperCase() || '?';
+}
+
+// Аватар чужой анкеты: фото, если есть, иначе буква
+function personAvaHtml(u) {
+  if (u.photo) {
+    return `<img src="${u.photo}" alt="Аватар" style="width:100%;height:100%;object-fit:cover;">`;
+  }
+  return avaInitial(u.name);
 }
 
 // ---- Демо-анкеты ----
@@ -284,7 +293,8 @@ async function login() {
       marital: p.marital || 'single',
       smoke: p.smoke || 'no',
       drink: p.drink || 'no',
-      bio: p.bio || ''
+      bio: p.bio || '',
+      photo: p.photo || null
     } : { name: email.split('@')[0] });
   }
   save();
@@ -374,7 +384,7 @@ function renderHome() {
   const u = list[0];
   box.innerHTML = `
     <div class="card">
-      <div class="photo">${avaInitial(u.name)}</div>
+      <div class="photo">${personAvaHtml(u)}</div>
       ${u.km ? `<div class="distance">📍 ${u.km} км от тебя</div>` : ''}
       <div class="info"><h2>${u.name}, ${u.age}</h2><p>${u.city} · ${u.bio}</p></div>
     </div>
@@ -431,7 +441,7 @@ function renderLikes() {
     const isMatch = state.matches.includes(String(u.id));
     return `
     <div class="person-row" onclick="${isMatch ? `openChat('${u.id}')` : ''}">
-      <div class="ava">${avaInitial(u.name)}</div>
+      <div class="ava">${personAvaHtml(u)}</div>
       <div><div class="name">${u.name}, ${u.age}</div>
       <div class="sub">${u.city}</div></div>
       <div class="tag ${isMatch ? 'match' : 'wait'}">${isMatch ? 'Взаимно 💜' : 'Ждёт ответа'}</div>
@@ -519,7 +529,8 @@ async function saveProfileToDb() {
     smoke: me.smoke,
     drink: me.drink,
     bio: me.bio,
-    emoji: avaInitial(me.name)
+    emoji: avaInitial(me.name),
+    photo: me.photo
   });
   if (error) {
     console.error('ОШИБКА сохранения профиля:', error.message);
@@ -710,7 +721,7 @@ function renderChats() {
     const last = msgs.length ? msgs[msgs.length-1].text : 'Напишите первым ✍️';
     return `
     <div class="person-row" onclick="openChat('${u.id}')">
-      <div class="ava">${avaInitial(u.name)}</div>
+      <div class="ava">${personAvaHtml(u)}</div>
       <div><div class="name">${u.name}, ${u.age}</div>
       <div class="sub">${last.length > 28 ? last.slice(0, 28) + '…' : last}</div></div>
     </div>`;
@@ -722,7 +733,12 @@ function openChat(id) {
   showScreen('chat');
   const u = findPerson(currentChat);
   if (!u) return;
-  document.getElementById('chat-ava').textContent = avaInitial(u.name);
+  const chatAva = document.getElementById('chat-ava');
+  if (u.photo) {
+    chatAva.innerHTML = `<img src="${u.photo}" alt="Аватар">`;
+  } else {
+    chatAva.textContent = avaInitial(u.name);
+  }
   document.getElementById('chat-name').textContent = u.name;
   document.getElementById('chat-age').textContent = u.city;
   if (!state.chats[currentChat]) state.chats[currentChat] = [];
@@ -804,7 +820,8 @@ document.getElementById('chat-input').addEventListener('keydown', e => {
         marital: p.marital || 'single',
         smoke: p.smoke || 'no',
         drink: p.drink || 'no',
-        bio: p.bio || ''
+        bio: p.bio || '',
+        photo: p.photo || null
       } : { name: 'Без имени' });
     }
     if (state.me) enterApp();
