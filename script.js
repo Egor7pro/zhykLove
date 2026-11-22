@@ -9,7 +9,11 @@ let dbProfiles = [];
 
 async function loadProfiles() {
   const { data, error } = await sb.from('profiles').select('*');
-  if (error) { console.warn('Не удалось загрузить анкеты:', error.message); return; }
+  if (error) {
+    console.error('ОШИБКА загрузки анкет:', error.message);
+    alert('Ошибка загрузки анкет: ' + error.message);
+    return;
+  }
   dbProfiles = (data || []).map(p => ({
     id: p.id,
     name: p.name || 'Без имени',
@@ -21,6 +25,7 @@ async function loadProfiles() {
     gender: p.gender,
     km: null
   }));
+  console.log('Загружено анкет из базы:', dbProfiles.length);
 }
 
 // Аватар: первая буква имени (если нет фото)
@@ -500,7 +505,7 @@ function updateBioCount() {
 async function saveProfileToDb() {
   if (!currentUser) return;
   const me = state.me;
-  await sb.from('profiles').upsert({
+  const { error } = await sb.from('profiles').upsert({
     id: currentUser.id,
     name: me.name,
     age: me.age,
@@ -516,6 +521,10 @@ async function saveProfileToDb() {
     bio: me.bio,
     emoji: avaInitial(me.name)
   });
+  if (error) {
+    console.error('ОШИБКА сохранения профиля:', error.message);
+    alert('Не сохранилось: ' + error.message);
+  }
 }
 
 async function saveProfile() {
