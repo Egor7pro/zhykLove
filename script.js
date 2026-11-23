@@ -42,9 +42,6 @@ function personAvaHtml(u) {
   return avaInitial(u.name);
 }
 
-// ---- Автоответы в чате ----
-const REPLIES = ['Привет! Как дела? 😊', 'Классный профиль!', 'Чем занят(а) на выходных?', 'Кофе или чай? ☕'];
-
 // ---- Настройки монетизации ----
 const FREE_CHARS = 20;
 const CHARS_PER_COIN = 15;
@@ -65,7 +62,7 @@ const GIFTS = [
 ];
 
 // ---- Состояние ----
-const STATE_VERSION = 12;
+const STATE_VERSION = 13;
 
 function stateKey() {
   return 'zhyklove_v' + STATE_VERSION + '_' + (currentUser ? currentUser.id : 'guest');
@@ -105,7 +102,6 @@ function loadStateForUser() {
     const s = JSON.parse(raw);
     if (!s.me) return null;
     s.me = Object.assign(defaultMe(), s.me);
-    // id везде храним строками — иначе сравнение id ломает поиск
     s.seen = (s.seen || []).map(String);
     s.likes = (s.likes || []).map(String);
     s.matches = (s.matches || []).map(String);
@@ -119,9 +115,13 @@ function loadStateForUser() {
 const save = () => localStorage.setItem(stateKey(), JSON.stringify(state));
 let currentChat = null;
 
+// Сообщения текущего чата (приходят из базы)
+let chatMessages = [];
+let chatChannel = null;
+
 // ---- Поиск анкеты по id (строковое сравнение) ----
 function findPerson(id) {
-  return allPeople().find(x => String(x.id) === String(id));
+  return dbProfiles.find(x => String(x.id) === String(id));
 }
 
 // ---- Переключение регистрация/вход ----
@@ -306,7 +306,8 @@ function enterApp() {
 
 // ---- Выход ----
 function logout() {
-  if (!confirm('Точно выйти? Лайки и чаты будут удалены.')) return;
+  if (!confirm('Точно выйти? Лайки будут удалены.')) return;
+  if (chatChannel) { sb.removeChannel(chatChannel); chatChannel = null; }
   sb.auth.signOut();
   localStorage.removeItem(stateKey());
   currentUser = null;
@@ -491,8 +492,7 @@ function renderProfile() {
   document.getElementById('photo-remove').classList.toggle('hidden', !me.photo);
   document.getElementById('stat-likes').textContent = state.likes.length;
   document.getElementById('stat-matches').textContent = state.matches.length;
-  document.getElementById('stat-chats').textContent =
-    Object.values(state.chats).filter(m => m.length).length;
+  document.getElementById('stat-chats').textContent = state.matches.length;
   updateCoinsUI();
 }
 
@@ -668,34 +668,18 @@ function updateGiftTotal() {
     `Итого: ${(g.price * gift.qty).toLocaleString('ru-RU')} ₽ (${gift.qty} шт.)`;
 }
 
-function sendGift() {
+async function sendGift() {
   if (!gift.id) return alert('Сначала выберите подарок в списке');
   const g = GIFTS.find(x => x.id === gift.id);
   const total = g.price * gift.qty;
   const u = findPerson(currentChat);
   if (!u) return alert('Не удалось найти получателя подарка');
 
-  payRub(total, `${g.emoji} ${g.name} × ${gift.qty} для ${u.name}`, () => {
-    state.chats[String(currentChat)].push({
-      me: true,
-      text: `${g.emoji} Подарил(а) ${u.name}: ${g.name} × ${gift.qty} (оплачено ${total.toLocaleString('ru-RU')} ₽)`
-    });
-    save();
+  payRub(total, `${g.emoji} ${g.name} × ${gift.qty} для ${u.name}`, async () => {
+    const text = `${g.emoji} Подарок: ${g.name} × ${gift.qty} (оплачено ${total.toLocaleString('ru-RU')} ₽)`;
+    await insertMessage(text);
     closeGift();
     renderChat();
-    updateBadges();
-
-    setTimeout(() => {
-      const thanks = [
-        `${g.emoji} Спасибо! Это лучший подарок! 💜`,
-        `${g.emoji} Ого, как щедро! Спасибо 💜`,
-        `${g.emoji} Вы меня балуете! Спасибо 😊`
-      ];
-      state.chats[String(currentChat)].push({ me: false, text: thanks[Math.floor(Math.random() * thanks.length)] });
-      save();
-      if (currentChat !== null) renderChat();
-      updateBadges();
-    }, 1200);
   });
 }
 
@@ -719,7 +703,7 @@ function renderChats() {
   }).join('');
 }
 
-function openChat(id) {
+async function openChat(id) {
   currentChat = String(id);
   showScreen('chat');
   const u = findPerson(currentChat);
@@ -732,19 +716,74 @@ function openChat(id) {
   }
   document.getElementById('chat-name').textContent = u.name;
   document.getElementById('chat-age').textContent = u.city;
-  if (!state.chats[currentChat]) state.chats[currentChat] = [];
-  renderChat();
+
+  await loadChatMessages();
+  subscribeToChat();
   updateCoinsUI();
+}
+
+// Загрузка переписки из базы
+async function loadChatMessages() {
+  const myId = currentUser.id;
+  const { data, error } = await sb.from('messages')
+    .select('*')
+    .or(`and(sender_id.eq.${myId},receiver_id.eq.${currentChat}),and(sender_id.eq.${currentChat},receiver_id.eq.${myId})`)
+    .order('created_at', { ascending: true });
+  if (error) {
+    console.error('ОШИБКА загрузки сообщений:', error.message);
+    chatMessages = [];
+    renderChat();
+    return;
+  }
+  chatMessages = (data || []).map(m => ({
+    me: m.sender_id === myId,
+    text: m.text
+  }));
+  renderChat();
+}
+
+// Подписка на новые сообщения в реальном времени
+function subscribeToChat() {
+  if (chatChannel) { sb.removeChannel(chatChannel); chatChannel = null; }
+  chatChannel = sb.channel('chat-' + currentChat)
+    .on('postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'messages', filter: `receiver_id=eq.${currentUser.id}` },
+      (payload) => {
+        const msg = payload.new;
+        if (String(msg.sender_id) === String(currentChat)) {
+          chatMessages.push({ me: false, text: msg.text });
+          renderChat();
+        }
+      })
+    .subscribe();
+}
+
+async function insertMessage(text) {
+  const { error } = await sb.from('messages').insert({
+    sender_id: currentUser.id,
+    receiver_id: currentChat,
+    text: text
+  });
+  if (error) {
+    console.error('ОШИБКА отправки:', error.message);
+    alert('Сообщение не отправилось: ' + error.message);
+    return false;
+  }
+  chatMessages.push({ me: true, text });
+  state.chats[currentChat] = [{ me: true, text }];
+  save();
+  renderChat();
+  return true;
 }
 
 function renderChat() {
   const box = document.getElementById('chat-box');
-  box.innerHTML = (state.chats[currentChat] || []).map(m =>
+  box.innerHTML = chatMessages.map(m =>
     `<div class="msg ${m.me ? 'me' : 'them'}">${m.text}</div>`).join('');
   box.scrollTop = box.scrollHeight;
 }
 
-function sendMessage() {
+async function sendMessage() {
   const input = document.getElementById('chat-input');
   const text = input.value.trim();
   if (!text || currentChat === null) return;
@@ -769,19 +808,18 @@ function sendMessage() {
     if (state.freeCharsLeft < 0) state.freeCharsLeft = 0;
   }
 
-  state.chats[currentChat].push({ me: true, text });
+  const ok = await insertMessage(text);
+  if (!ok) {
+    state.coins += cost.coins;
+    if (!vipActive()) {
+      state.freeCharsLeft += cost.covered;
+    }
+    updateCoinsUI();
+    return;
+  }
   save();
   input.value = '';
-  renderChat();
-  updateBadges();
   updateCoinsUI();
-
-  setTimeout(() => {
-    state.chats[currentChat].push({ me: false, text: REPLIES[Math.floor(Math.random() * REPLIES.length)] });
-    save();
-    if (currentChat !== null) renderChat();
-    updateBadges();
-  }, 1200);
 }
 
 document.getElementById('chat-input').addEventListener('keydown', e => {
