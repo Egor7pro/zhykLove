@@ -4,7 +4,7 @@ const SUPA_KEY = 'sb_publishable_pMoqaaTItSB1tnrKCsBK-A_92rSvWd1';
 const sb = supabase.createClient(SUPA_URL, SUPA_KEY);
 let currentUser = null;
 
-// Реальные анкеты из базы
+// Анкеты из базы
 let dbProfiles = [];
 
 async function loadProfiles() {
@@ -42,15 +42,7 @@ function personAvaHtml(u) {
   return avaInitial(u.name);
 }
 
-// ---- Демо-анкеты ----
-const USERS = [
-  { id:1, name:'Алина', age:23, city:'Казань', bio:'Люблю кофе и спонтанные поездки 🚗', gender:'f', km:2 },
-  { id:2, name:'Дина', age:25, city:'Казань', bio:'Танцую, читаю, готовлю лучший борщ 🍲', gender:'f', km:5 },
-  { id:3, name:'Марат', age:27, city:'Казань', bio:'IT, гитара и настолки 🎸', gender:'m', km:3 },
-  { id:4, name:'Соня', age:22, city:'Казань', bio:'Ищу компанию на концерт 🎤', gender:'f', km:8 },
-  { id:5, name:'Артур', age:29, city:'Казань', bio:'Бегаю по утрам, мечтаю о марафоне 🏃', gender:'m', km:12 },
-  { id:6, name:'Лейла', age:24, city:'Москва', bio:'Фотограф. Давай на красивый кадр 📸', gender:'f', km:720 },
-];
+// ---- Автоответы в чате ----
 const REPLIES = ['Привет! Как дела? 😊', 'Классный профиль!', 'Чем занят(а) на выходных?', 'Кофе или чай? ☕'];
 
 // ---- Настройки монетизации ----
@@ -73,7 +65,7 @@ const GIFTS = [
 ];
 
 // ---- Состояние ----
-const STATE_VERSION = 11;
+const STATE_VERSION = 12;
 
 function stateKey() {
   return 'zhyklove_v' + STATE_VERSION + '_' + (currentUser ? currentUser.id : 'guest');
@@ -113,7 +105,7 @@ function loadStateForUser() {
     const s = JSON.parse(raw);
     if (!s.me) return null;
     s.me = Object.assign(defaultMe(), s.me);
-    // id везде храним строками — иначе демо-анкеты ломают поиск
+    // id везде храним строками — иначе сравнение id ломает поиск
     s.seen = (s.seen || []).map(String);
     s.likes = (s.likes || []).map(String);
     s.matches = (s.matches || []).map(String);
@@ -358,8 +350,7 @@ function updateBadges() {
 // ---- Лента анкет ----
 function allPeople() {
   const myId = currentUser && currentUser.id;
-  const real = dbProfiles.filter(p => p.id !== myId);
-  return [...real, ...USERS];
+  return dbProfiles.filter(p => p.id !== myId);
 }
 
 function candidates() {
