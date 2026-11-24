@@ -492,7 +492,7 @@ function renderProfile() {
   document.getElementById('photo-remove').classList.toggle('hidden', !me.photo);
   document.getElementById('stat-likes').textContent = state.likes.length;
   document.getElementById('stat-matches').textContent = state.matches.length;
-  document.getElementById('stat-chats').textContent = state.matches.length;
+  document.getElementById('stat-chats').textContent = Object.keys(state.chats).filter(k => state.chats[k].length).length;
   updateCoinsUI();
 }
 

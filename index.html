@@ -102,70 +102,18 @@
   <!-- Профиль -->
   <div id="screen-profile" class="screen hidden">
     <h3 class="section">Мой профиль</h3>
-    <div class="profile-card">
-      <div class="profile-ava" id="profile-ava">?</div>
 
+    <!-- Аватар и фото -->
+    <div class="profile-hero">
+      <div class="profile-ava-ring">
+        <div class="profile-ava" id="profile-ava">?</div>
+      </div>
       <label class="photo-upload" for="photo-input">📷 Загрузить своё фото</label>
       <input id="photo-input" type="file" accept="image/*" class="hidden">
       <button class="btn-ghost photo-remove hidden" id="photo-remove" onclick="removePhoto()">Удалить фото</button>
-
-      <label class="p-label">Имя</label>
-      <input id="prof-name" maxlength="30">
-      <label class="p-label">Возраст</label>
-      <input id="prof-age" type="number" min="18" max="99">
-      <label class="p-label">Страна</label>
-      <select id="prof-country">
-        <option value="Россия">Россия</option>
-        <option value="Казахстан">Казахстан</option>
-        <option value="Беларусь">Беларусь</option>
-        <option value="Другая">Другая</option>
-      </select>
-      <label class="p-label">Регион</label>
-      <input id="prof-region" maxlength="50" placeholder="Например, Татарстан">
-      <label class="p-label">Город</label>
-      <input id="prof-city" maxlength="30" placeholder="Например, Казань">
-      <label class="p-label">Мой пол</label>
-      <select id="prof-gender">
-        <option value="f">Девушка</option>
-        <option value="m">Парень</option>
-      </select>
-      <label class="p-label">Кого ищу</label>
-      <select id="prof-seeking">
-        <option value="f">Девушек</option>
-        <option value="m">Парней</option>
-      </select>
-      <label class="p-label">Знакомлюсь для</label>
-      <select id="prof-goal">
-        <option value="flirt">Флирт</option>
-        <option value="romance">Романтика</option>
-        <option value="serious">Серьёзные отношения</option>
-      </select>
-      <label class="p-label">Семейное положение</label>
-      <select id="prof-marital">
-        <option value="single">Не в отношениях</option>
-        <option value="dating">Встречаюсь</option>
-        <option value="married">Женат / замужем</option>
-        <option value="complicated">Всё сложно</option>
-      </select>
-      <label class="p-label">Курение</label>
-      <select id="prof-smoke">
-        <option value="no">Не курю</option>
-        <option value="rare">Курю редко</option>
-        <option value="yes">Курю</option>
-      </select>
-      <label class="p-label">Алкоголь</label>
-      <select id="prof-drink">
-        <option value="no">Не пью</option>
-        <option value="rare">Пью редко</option>
-        <option value="yes">Пью</option>
-      </select>
-      <label class="p-label">О себе</label>
-      <textarea id="prof-bio" maxlength="120" placeholder="Пара слов о себе..."></textarea>
-      <div class="bio-note" id="bio-count">0 / 120</div>
-      <button class="btn-main" onclick="saveProfile()">Сохранить</button>
-      <div class="filter-note" id="prof-note"></div>
     </div>
 
+    <!-- Статистика -->
     <div class="stats">
       <div class="stat">
         <div class="stat-num" id="stat-likes">0</div>
@@ -179,6 +127,93 @@
         <div class="stat-num" id="stat-chats">0</div>
         <div class="stat-cap">чатов</div>
       </div>
+    </div>
+
+    <!-- Данные анкеты -->
+    <div class="profile-card">
+      <div class="form-grid">
+        <div class="form-field">
+          <label class="p-label">Имя</label>
+          <input id="prof-name" maxlength="30" placeholder="Как тебя зовут?">
+        </div>
+        <div class="form-field">
+          <label class="p-label">Возраст</label>
+          <input id="prof-age" type="number" min="18" max="99">
+        </div>
+        <div class="form-field">
+          <label class="p-label">Страна</label>
+          <select id="prof-country">
+            <option value="Россия">Россия</option>
+            <option value="Казахстан">Казахстан</option>
+            <option value="Беларусь">Беларусь</option>
+            <option value="Другая">Другая</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label class="p-label">Регион</label>
+          <input id="prof-region" maxlength="50" placeholder="Например, Татарстан">
+        </div>
+        <div class="form-field">
+          <label class="p-label">Город</label>
+          <input id="prof-city" maxlength="30" placeholder="Например, Казань">
+        </div>
+        <div class="form-field">
+          <label class="p-label">Мой пол</label>
+          <select id="prof-gender">
+            <option value="f">Девушка</option>
+            <option value="m">Парень</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label class="p-label">Кого ищу</label>
+          <select id="prof-seeking">
+            <option value="f">Девушек</option>
+            <option value="m">Парней</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label class="p-label">Знакомлюсь для</label>
+          <select id="prof-goal">
+            <option value="flirt">Флирт</option>
+            <option value="romance">Романтика</option>
+            <option value="serious">Серьёзные отношения</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label class="p-label">Семейное положение</label>
+          <select id="prof-marital">
+            <option value="single">Не в отношениях</option>
+            <option value="dating">Встречаюсь</option>
+            <option value="married">Женат / замужем</option>
+            <option value="complicated">Всё сложно</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label class="p-label">Курение</label>
+          <select id="prof-smoke">
+            <option value="no">Не курю</option>
+            <option value="rare">Курю редко</option>
+            <option value="yes">Курю</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label class="p-label">Алкоголь</label>
+          <select id="prof-drink">
+            <option value="no">Не пью</option>
+            <option value="rare">Пью редко</option>
+            <option value="yes">Пью</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-field">
+        <label class="p-label">О себе</label>
+        <textarea id="prof-bio" maxlength="120" placeholder="Пара слов о себе..."></textarea>
+        <div class="bio-note" id="bio-count">0 / 120</div>
+      </div>
+
+      <button class="btn-main" onclick="saveProfile()">Сохранить профиль</button>
+      <div class="filter-note" id="prof-note"></div>
     </div>
 
     <!-- Магазин монет -->
@@ -206,6 +241,7 @@
       </div>
     </div>
 
+    <!-- Фильтр -->
     <h3 class="section" style="margin-top:20px">Фильтр поиска</h3>
     <div class="filter-box">
       <label>Кого ищем</label>
