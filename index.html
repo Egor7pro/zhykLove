@@ -99,6 +99,33 @@
     </div>
   </div>
 
+  <!-- Прямой эфир -->
+  <div id="screen-live" class="screen hidden">
+    <h3 class="section">Прямой эфир</h3>
+
+    <!-- Список эфиров -->
+    <div id="live-list"></div>
+
+    <button class="btn-main" id="btn-start-live" onclick="startLive()">🔴 Начать эфир</button>
+
+    <!-- Видео и чат эфира -->
+    <div id="live-video-wrap" class="hidden">
+      <div class="live-video-frame">
+        <video id="live-video" autoplay playsinline></video>
+        <div id="live-status"></div>
+      </div>
+
+      <div id="live-chat-box"></div>
+
+      <div id="live-chat-row">
+        <input id="live-chat-input" placeholder="Сообщение..." maxlength="200">
+        <button id="live-chat-send" onclick="sendLiveChat()">➤</button>
+      </div>
+
+      <button class="btn-logout" id="btn-leave-live" onclick="leaveLive()">Выйти из эфира</button>
+    </div>
+  </div>
+
   <!-- Профиль -->
   <div id="screen-profile" class="screen hidden">
     <h3 class="section">Мой профиль</h3>
@@ -213,7 +240,7 @@
       </div>
 
       <button class="btn-main" onclick="saveProfile()">Сохранить профиль</button>
-      <div class="filter-note" id="prof-note"></div>
+      <div class="profile-note" id="prof-note"></div>
     </div>
 
     <!-- Магазин монет -->
@@ -239,25 +266,6 @@
         <button class="btn-vip" onclick="buyVip()">Месяц — 1800 ₽</button>
         <button class="btn-vip" onclick="buyVip()">Год — 16800 ₽</button>
       </div>
-    </div>
-
-    <!-- Фильтр -->
-    <h3 class="section" style="margin-top:20px">Фильтр поиска</h3>
-    <div class="filter-box">
-      <label>Кого ищем</label>
-      <select id="flt-seeking">
-        <option value="f">Девушек</option>
-        <option value="m">Парней</option>
-      </select>
-      <label>Город (пусто — любой)</label>
-      <input id="flt-city" maxlength="30" placeholder="Например, Казань">
-      <label>Возраст: от и до</label>
-      <div class="ages">
-        <input id="flt-min" type="number" placeholder="от 18" min="18" max="99">
-        <input id="flt-max" type="number" placeholder="до 99" min="18" max="99">
-      </div>
-      <button class="btn-main" style="margin-top:16px" onclick="applyFilter()">Применить</button>
-      <div class="filter-note" id="flt-note"></div>
     </div>
 
     <button class="btn-logout" onclick="logout()">Выйти из аккаунта</button>
@@ -300,6 +308,7 @@
     <button id="nav-home" class="nav-button active" onclick="showScreen('home')">🔥</button>
     <button id="nav-likes" class="nav-button" onclick="showScreen('likes')">❤️<span class="badge hidden" id="likes-badge"></span></button>
     <button id="nav-chats" class="nav-button" onclick="showScreen('chats')">💬<span class="badge hidden" id="chats-badge"></span></button>
+    <button id="nav-live" class="nav-button" onclick="showScreen('live')">📺</button>
     <button id="nav-profile" class="nav-button" onclick="showScreen('profile')">👤</button>
   </nav>
 

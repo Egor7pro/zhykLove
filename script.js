@@ -23,8 +23,7 @@ async function loadProfiles() {
     city: p.city || 'Не указан',
     bio: p.bio || '',
     gender: p.gender,
-    photo: p.photo || null,
-    km: null
+    photo: p.photo || null
   }));
   console.log('Загружено анкет из базы:', dbProfiles.length);
 }
@@ -37,7 +36,7 @@ function avaInitial(name) {
 // Аватар чужой анкеты: фото, если есть, иначе буква
 function personAvaHtml(u) {
   if (u.photo) {
-    return `<img src="${u.photo}" alt="Аватар" style="width:100%;height:100%;object-fit:cover;">`;
+    return `<img src="${u.photo}" alt="Аватар">`;
   }
   return avaInitial(u.name);
 }
@@ -62,7 +61,7 @@ const GIFTS = [
 ];
 
 // ---- Состояние ----
-const STATE_VERSION = 13;
+const STATE_VERSION = 14;
 
 function stateKey() {
   return 'zhyklove_v' + STATE_VERSION + '_' + (currentUser ? currentUser.id : 'guest');
@@ -75,7 +74,6 @@ function defaultState() {
     likes: [],
     matches: [],
     chats: {},
-    filters: { city: '', min: 18, max: 99 },
     coins: 0,
     freeCharsLeft: FREE_CHARS,
     vip: false,
@@ -105,7 +103,6 @@ function loadStateForUser() {
     s.seen = (s.seen || []).map(String);
     s.likes = (s.likes || []).map(String);
     s.matches = (s.matches || []).map(String);
-    if (!s.filters) s.filters = { city: '', min: 18, max: 99 };
     if (s.coins === undefined) s.coins = 0;
     if (s.freeCharsLeft === undefined) s.freeCharsLeft = FREE_CHARS;
     return s;
@@ -307,6 +304,8 @@ function enterApp() {
 // ---- Выход ----
 function logout() {
   if (!confirm('Точно выйти? Лайки будут удалены.')) return;
+  leaveLive();
+  closeLiveIndex();
   if (chatChannel) { sb.removeChannel(chatChannel); chatChannel = null; }
   sb.auth.signOut();
   localStorage.removeItem(stateKey());
@@ -318,21 +317,22 @@ function logout() {
   document.getElementById('login-fields').classList.add('hidden');
   document.getElementById('nav').classList.add('hidden');
   document.getElementById('header').classList.add('hidden');
-  ['home','likes','chats','chat','profile'].forEach(x =>
+  ['home','likes','chats','chat','live','profile'].forEach(x =>
     document.getElementById('screen-' + x).classList.add('hidden'));
 }
 
 // ---- Навигация ----
 function showScreen(s) {
-  ['home','likes','chats','chat','profile'].forEach(x =>
+  ['home','likes','chats','chat','live','profile'].forEach(x =>
     document.getElementById('screen-' + x).classList.toggle('hidden', x !== s));
-  ['home','likes','chats','profile'].forEach(x => {
+  ['home','likes','chats','live','profile'].forEach(x => {
     const b = document.getElementById('nav-' + x);
     if (b) b.classList.toggle('active', x === s);
   });
   if (s === 'home') loadProfiles().then(renderHome);
   if (s === 'likes') renderLikes();
   if (s === 'chats') renderChats();
+  if (s === 'live') { if (!liveIndexChannel) openLiveIndex(); }
   if (s === 'profile') renderProfile();
   if (s === 'chat') updateCoinsUI();
   updateBadges();
@@ -355,12 +355,9 @@ function allPeople() {
 }
 
 function candidates() {
-  const f = state.filters;
   return allPeople()
     .filter(u => u.id && !state.seen.includes(String(u.id)))
-    .filter(u => !state.me.seeking || u.gender === state.me.seeking)
-    .filter(u => !f.city || (u.city || '').toLowerCase().includes(f.city.toLowerCase()))
-    .filter(u => u.age >= f.min && u.age <= f.max);
+    .filter(u => !state.me.seeking || u.gender === state.me.seeking);
 }
 
 // ---- Главная ----
@@ -377,7 +374,6 @@ function renderHome() {
   box.innerHTML = `
     <div class="card">
       <div class="photo">${personAvaHtml(u)}</div>
-      ${u.km ? `<div class="distance">📍 ${u.km} км от тебя</div>` : ''}
       <div class="info"><h2>${u.name}, ${u.age}</h2><p>${u.city} · ${u.bio}</p></div>
     </div>
     <div class="actions">
@@ -439,36 +435,6 @@ function renderLikes() {
       <div class="tag ${isMatch ? 'match' : 'wait'}">${isMatch ? 'Взаимно 💜' : 'Ждёт ответа'}</div>
     </div>`;
   }).join('');
-}
-
-// ---- Фильтр ----
-function renderFilter() {
-  document.getElementById('flt-seeking').value = state.me.seeking;
-  document.getElementById('flt-city').value = state.filters.city || '';
-  document.getElementById('flt-min').value = state.filters.min || '';
-  document.getElementById('flt-max').value = state.filters.max || '';
-  updateFilterNote();
-}
-function applyFilter() {
-  const seeking = document.getElementById('flt-seeking').value;
-  const city = document.getElementById('flt-city').value.trim();
-  let min = +document.getElementById('flt-min').value || 18;
-  let max = +document.getElementById('flt-max').value || 99;
-  if (min > max) [min, max] = [max, min];
-  state.me.seeking = seeking;
-  state.filters = { city, min, max };
-  save();
-  saveProfileToDb();
-  updateFilterNote();
-  showScreen('home');
-}
-function updateFilterNote() {
-  const f = state.filters;
-  const n = allPeople()
-    .filter(u => u.gender === state.me.seeking)
-    .filter(u => !f.city || (u.city || '').toLowerCase().includes(f.city.toLowerCase()))
-    .filter(u => u.age >= f.min && u.age <= f.max).length;
-  document.getElementById('flt-note').textContent = `Под фильтр попадает анкет: ${n}`;
 }
 
 // ---- Профиль ----
@@ -825,6 +791,252 @@ async function sendMessage() {
 document.getElementById('chat-input').addEventListener('keydown', e => {
   if (e.key === 'Enter') sendMessage();
 });
+
+// ---- Прямой эфир (WebRTC + Supabase Realtime) ----
+// Ведущий публикует камеру, зрители смотрят напрямую у ведущего (mesh).
+const RTC_CFG = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+
+let liveIndexChannel = null;  // общий канал со списком эфиров (presence)
+let liveChannel = null;       // сигналинг-канал текущего эфира
+let liveRole = null;          // 'host' | 'viewer'
+let liveRoom = null;          // id ведущего
+let liveStream = null;        // локальная камера ведущего
+const hostPcs = new Map();    // ведущий: viewerId -> RTCPeerConnection
+let viewerPc = null;          // зритель: одно подключение
+let gotOffer = false;         // пришло ли видео от ведущего
+
+function openLiveIndex() {
+  liveIndexChannel = sb.channel('live-index', { config: { presence: { key: currentUser.id } } });
+  liveIndexChannel
+    .on('presence', { event: 'sync' }, () => {
+      renderLiveList(liveIndexChannel.presenceState());
+    })
+    .subscribe();
+}
+
+function closeLiveIndex() {
+  if (liveIndexChannel) { sb.removeChannel(liveIndexChannel); liveIndexChannel = null; }
+}
+
+function renderLiveList(presenceState) {
+  const box = document.getElementById('live-list');
+  if (!box) return;
+  const hosts = [];
+  Object.values(presenceState).forEach(arr => {
+    (arr || []).forEach(meta => {
+      if (meta && meta.id && meta.id !== currentUser.id && !hosts.some(h => h.id === meta.id)) {
+        hosts.push(meta);
+      }
+    });
+  });
+  if (!hosts.length) {
+    box.innerHTML = '<div class="empty">Сейчас никто не в эфире.<br>Стань первым — жми «Начать эфир»! 🔴</div>';
+    return;
+  }
+  box.innerHTML = hosts.map(h => `
+    <div class="person-row">
+      <div class="ava">${h.photo ? `<img src="${h.photo}" alt="Аватар">` : avaInitial(h.name)}</div>
+      <div><div class="name">${h.name}</div><div class="sub">🔴 в эфире</div></div>
+      <button class="btn-live-watch" onclick="watchLive('${h.id}')">Смотреть</button>
+    </div>`).join('');
+}
+
+async function startLive() {
+  if (liveRole) return alert('Ты уже в эфире');
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    return alert('Браузер не поддерживает камеру. Нужен HTTPS и современный браузер.');
+  }
+  try {
+    liveStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+  } catch (e) {
+    return alert('Не удалось включить камеру/микрофон: ' + e.message);
+  }
+  liveRole = 'host';
+  liveRoom = currentUser.id;
+
+  const v = document.getElementById('live-video');
+  v.srcObject = liveStream;
+  v.muted = true; // свой звук не слушаем
+  v.play().catch(() => {});
+
+  joinSignaling(liveRoom);
+  if (liveIndexChannel) liveIndexChannel.track({ id: currentUser.id, name: state.me.name, photo: state.me.photo });
+
+  document.getElementById('btn-start-live').classList.add('hidden');
+  document.getElementById('live-list').classList.add('hidden');
+  document.getElementById('live-video-wrap').classList.remove('hidden');
+  document.getElementById('live-status').textContent = '🔴 В эфире · ты ведущий';
+  document.getElementById('live-chat-box').innerHTML = '';
+}
+
+async function watchLive(broadcasterId) {
+  if (liveRole) return alert('Сначала выйди из текущего эфира');
+  liveRole = 'viewer';
+  liveRoom = String(broadcasterId);
+  gotOffer = false;
+
+  document.getElementById('btn-start-live').classList.add('hidden');
+  document.getElementById('live-list').classList.add('hidden');
+  document.getElementById('live-video-wrap').classList.remove('hidden');
+  document.getElementById('live-status').textContent = '⏳ Подключаемся к эфиру...';
+  document.getElementById('live-chat-box').innerHTML = '';
+
+  joinSignaling(liveRoom);
+
+  // если ведущий не ответил за 7 секунд — сообщаем
+  setTimeout(() => {
+    if (liveRole === 'viewer' && !gotOffer) {
+      document.getElementById('live-status').textContent = 'Эфир недоступен — возможно, ведущий уже закончил';
+    }
+  }, 7000);
+}
+
+function joinSignaling(room) {
+  liveChannel = sb.channel('live-' + room, { config: { presence: { key: currentUser.id } } });
+  liveChannel
+    .on('broadcast', { event: 'chat' }, ({ payload }) => {
+      renderLiveChat(payload.name || 'Гость', payload.text, payload.from === currentUser.id);
+    });
+
+  if (liveRole === 'host') {
+    liveChannel
+      .on('broadcast', { event: 'hello' }, ({ payload }) => onViewerHello(payload))
+      .on('broadcast', { event: 'answer' }, ({ payload }) => onViewerAnswer(payload))
+      .on('broadcast', { event: 'ice' }, ({ payload }) => onLiveIce(payload))
+      .subscribe();
+  } else {
+    liveChannel
+      .on('broadcast', { event: 'offer' }, ({ payload }) => onHostOffer(payload))
+      .on('broadcast', { event: 'ice' }, ({ payload }) => onLiveIce(payload))
+      .subscribe(status => {
+        if (status === 'SUBSCRIBED') {
+          liveChannel.send({ type: 'broadcast', event: 'hello', payload: { from: currentUser.id } });
+        }
+      });
+  }
+}
+
+// --- Ведущий: новый зритель ---
+async function onViewerHello(p) {
+  if (liveRole !== 'host' || !liveStream) return;
+  const pc = new RTCPeerConnection(RTC_CFG);
+  hostPcs.set(p.from, pc);
+  liveStream.getTracks().forEach(t => pc.addTrack(t, liveStream));
+  pc.onicecandidate = e => {
+    if (e.candidate) liveChannel.send({ type: 'broadcast', event: 'ice', payload: { to: p.from, cand: e.candidate } });
+  };
+  pc.onconnectionstatechange = () => {
+    if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+      hostPcs.delete(p.from);
+    }
+  };
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+  liveChannel.send({ type: 'broadcast', event: 'offer', payload: { to: p.from, sdp: pc.localDescription } });
+}
+
+// --- Ведущий: ответ зрителя ---
+async function onViewerAnswer(p) {
+  if (liveRole !== 'host') return;
+  const pc = hostPcs.get(p.from);
+  if (!pc) return;
+  pendingIce = [];
+  await pc.setRemoteDescription(new RTCSessionDescription(p.sdp));
+  pendingIce.forEach(c => pc.addIceCandidate(c).catch(console.error));
+  pendingIce = [];
+}
+
+// --- Зритель: предложение от ведущего ---
+async function onHostOffer(p) {
+  if (liveRole !== 'viewer' || p.to !== currentUser.id) return;
+  gotOffer = true;
+  document.getElementById('live-status').textContent = '🔴 Эфир идёт';
+  viewerPc = new RTCPeerConnection(RTC_CFG);
+  viewerPc.ontrack = e => {
+    const v = document.getElementById('live-video');
+    v.srcObject = e.streams[0];
+    v.muted = false;
+    v.play().catch(() => {});
+  };
+  viewerPc.onicecandidate = e => {
+    if (e.candidate) liveChannel.send({ type: 'broadcast', event: 'ice', payload: { to: 'host', from: currentUser.id, cand: e.candidate } });
+  };
+  await viewerPc.setRemoteDescription(new RTCSessionDescription(p.sdp));
+  pendingIce.forEach(c => viewerPc.addIceCandidate(c).catch(console.error));
+  pendingIce = [];
+  const ans = await viewerPc.createAnswer();
+  await viewerPc.setLocalDescription(ans);
+  liveChannel.send({ type: 'broadcast', event: 'answer', payload: { from: currentUser.id, sdp: viewerPc.localDescription } });
+}
+
+// --- ICE-кандидаты ---
+let pendingIce = [];
+function onLiveIce(p) {
+  const isHost = liveRole === 'host';
+  if (isHost && p.to !== currentUser.id) return;
+  if (!isHost && p.to !== currentUser.id) return;
+
+  let pc;
+  if (isHost) {
+    if (p.from === 'host') return;
+    pc = hostPcs.get(p.from);
+  } else {
+    if (p.from === currentUser.id) return;
+    pc = viewerPc;
+  }
+  if (!pc) return;
+  if (pc.remoteDescription) {
+    pc.addIceCandidate(p.cand).catch(console.error);
+  } else {
+    pendingIce.push(p.cand);
+  }
+}
+
+// --- Чат эфира ---
+function sendLiveChat() {
+  const input = document.getElementById('live-chat-input');
+  const text = input.value.trim();
+  if (!text || !liveChannel) return;
+  liveChannel.send({ type: 'broadcast', event: 'chat', payload: { from: currentUser.id, name: state.me.name, text } });
+  input.value = '';
+}
+
+function renderLiveChat(name, text, me) {
+  const box = document.getElementById('live-chat-box');
+  if (!box) return;
+  const div = document.createElement('div');
+  div.className = 'live-chat-msg' + (me ? ' me' : '');
+  div.innerHTML = `<b>${name}:</b> ${text}`;
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+}
+
+// --- Выход из эфира ---
+async function leaveLive() {
+  if (liveRole === 'host') {
+    if (liveIndexChannel) liveIndexChannel.untrack();
+    hostPcs.forEach(pc => pc.close());
+    hostPcs.clear();
+    if (liveStream) { liveStream.getTracks().forEach(t => t.stop()); liveStream = null; }
+  }
+  if (liveRole === 'viewer') {
+    if (viewerPc) { viewerPc.close(); viewerPc = null; }
+  }
+  if (liveChannel) { sb.removeChannel(liveChannel); liveChannel = null; }
+  liveRole = null;
+  liveRoom = null;
+  pendingIce = [];
+
+  const v = document.getElementById('live-video');
+  if (v) v.srcObject = null;
+
+  const wrap = document.getElementById('live-video-wrap');
+  if (wrap) wrap.classList.add('hidden');
+  const list = document.getElementById('live-list');
+  if (list) list.classList.remove('hidden');
+  const btn = document.getElementById('btn-start-live');
+  if (btn) btn.classList.remove('hidden');
+}
 
 // ---- Старт ----
 (async () => {

@@ -26,6 +26,8 @@ body { background: #1c1230; color: #eee; min-height: 100vh; }
   width: 100%; padding: 12px 16px; margin-bottom: 12px; border: 1px solid var(--line);
   border-radius: 14px; font-size: 15px; background: var(--card-deep); color: #eee; }
 #reg-screen select option { color: #222; }
+
+/* ---------- Кнопки ---------- */
 .btn-main { width: 100%; padding: 14px; border: none; border-radius: 14px; font-size: 16px;
   font-weight: 700; color: #fff; cursor: pointer; margin-top: 8px;
   background: linear-gradient(90deg, var(--brand1), var(--accent)); }
@@ -49,20 +51,17 @@ body { background: #1c1230; color: #eee; min-height: 100vh; }
 
 /* ---------- Нижняя навигация ---------- */
 nav { position: fixed; bottom: 0; left: 0; right: 0;
-  background: var(--card); display: flex; gap: 0;
-  padding: 16px 0; padding-bottom: calc(16px + env(safe-area-inset-bottom));
+  background: var(--card); display: flex;
+  padding: 12px 0; padding-bottom: calc(12px + env(safe-area-inset-bottom));
   box-shadow: 0 -4px 24px rgba(0,0,0,.5); z-index: 10; }
-.nav-button { flex: 1; display: flex; align-items: center; justify-content: center;
-  background: var(--card-deep); border: none; border-radius: 24px; font-size: 20px;
-  color: var(--muted); cursor: pointer; margin: 0 6px; height: 52px;
-  transition: background .2s, color .2s, box-shadow .2s; touch-action: manipulation; }
-.nav-button:hover:not(.active) { background: var(--card); color: #fff; }
-.nav-button.active { background: linear-gradient(135deg, var(--brand1), var(--accent));
-  color: #fff; box-shadow: 0 6px 22px rgba(123, 47, 247, .45); }
-nav .badge { position: relative; display: inline-flex; align-items: center;
-  justify-content: center; width: 18px; height: 18px; border-radius: 50%;
-  background: var(--accent); color: #fff; font-size: 10px; font-weight: 700;
-  margin-left: 6px; white-space: nowrap; }
+.nav-button { flex: 1; background: none; border: none; font-size: 24px;
+  color: var(--muted); cursor: pointer; position: relative;
+  transition: color .2s; }
+.nav-button.active { color: var(--accent); }
+nav .badge { position: absolute; top: -4px; right: calc(50% - 22px);
+  min-width: 18px; height: 18px; border-radius: 9px;
+  background: var(--accent); color: #fff; font-size: 11px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center; padding: 0 5px; }
 
 /* ---------- Экраны ---------- */
 .screen { max-width: 420px; margin: 0 auto; padding: 76px 16px 120px; }
@@ -95,8 +94,8 @@ nav .badge { position: relative; display: inline-flex; align-items: center;
 .person-row:hover { background: #35245a; }
 .person-row .ava { width: 48px; height: 48px; border-radius: 50%; display: flex;
   align-items: center; justify-content: center; font-size: 24px; flex-shrink: 0;
-  background: linear-gradient(135deg, var(--brand1), var(--accent)); color: #fff; }
-.person-row .ava img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+  background: linear-gradient(135deg, var(--brand1), var(--accent)); color: #fff; overflow: hidden; }
+.person-row .ava img { width: 100%; height: 100%; object-fit: cover; }
 .person-row .name { font-weight: 600; color: #fff; }
 .person-row .sub { font-size: 12px; color: var(--muted-2); }
 .tag { margin-left: auto; font-size: 12px; font-weight: 600; padding: 4px 10px;
@@ -104,19 +103,7 @@ nav .badge { position: relative; display: inline-flex; align-items: center;
 .tag.match { background: var(--accent); color: #fff; }
 .tag.wait { background: #3a2a5e; color: var(--muted-2); }
 
-/* ---------- Чаты ---------- */
-#chat-box { height: 50vh; overflow-y: auto; background: var(--card); border-radius: 18px; padding: 16px; }
-.msg { max-width: 75%; padding: 10px 14px; border-radius: 16px; margin-bottom: 10px; font-size: 14px;
-  word-break: break-word; }
-.msg.me { background: linear-gradient(90deg, var(--brand1), var(--accent)); color: #fff;
-  margin-left: auto; border-bottom-right-radius: 4px; }
-.msg.them { background: #3a2a5e; border-bottom-left-radius: 4px; }
-#chat-extra { display: flex; gap: 8px; margin-top: 12px; justify-content: flex-start; }
-#chat-input-row { display: flex; gap: 8px; margin-top: 8px; }
-#chat-input { flex: 1; padding: 12px 16px; border: 1px solid var(--line); border-radius: 24px;
-  font-size: 15px; background: var(--card-deep); color: #eee; }
-#chat-send { width: 48px; height: 48px; border-radius: 50%; border: none; font-size: 20px;
-  color: #fff; cursor: pointer; background: linear-gradient(90deg, var(--brand1), var(--accent)); }
+/* ---------- Чат ---------- */
 #chat-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
 #chat-header .ava { width: 40px; height: 40px; border-radius: 50%; display: flex;
   align-items: center; justify-content: center; font-size: 20px; overflow: hidden;
@@ -124,9 +111,24 @@ nav .badge { position: relative; display: inline-flex; align-items: center;
 #chat-header .ava img { width: 100%; height: 100%; object-fit: cover; }
 #back-btn { background: none; border: none; font-size: 22px; cursor: pointer; color: #eee; }
 
-/* ---------- Paywall в чате ---------- */
+#chat-box { height: 50vh; overflow-y: auto; background: var(--card); border-radius: 18px; padding: 16px; }
+.msg { max-width: 75%; padding: 10px 14px; border-radius: 16px; margin-bottom: 10px; font-size: 14px;
+  word-break: break-word; }
+.msg.me { background: linear-gradient(90deg, var(--brand1), var(--accent)); color: #fff;
+  margin-left: auto; border-bottom-right-radius: 4px; }
+.msg.them { background: #3a2a5e; border-bottom-left-radius: 4px; }
+
+#chat-extra { display: flex; gap: 8px; margin-top: 12px; }
+#chat-input-row { display: flex; gap: 8px; margin-top: 8px; }
+#chat-input { flex: 1; padding: 12px 16px; border: 1px solid var(--line); border-radius: 24px;
+  font-size: 15px; background: var(--card-deep); color: #eee; }
+#chat-send { width: 48px; height: 48px; border-radius: 50%; border: none; font-size: 20px;
+  color: #fff; cursor: pointer; background: linear-gradient(90deg, var(--brand1), var(--accent)); }
+
+/* ---------- Paywall ---------- */
 #pay-wall { margin-top: 12px; text-align: center; }
 .paywall-note { font-size: 13px; color: var(--muted-2); margin-bottom: 8px; }
+#pay-wall .btn-shop { margin: 4px; }
 
 /* ---------- Профиль ---------- */
 .profile-hero { display: flex; flex-direction: column; align-items: center; margin-bottom: 8px; }
@@ -150,29 +152,24 @@ nav .badge { position: relative; display: inline-flex; align-items: center;
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
 @media (max-width: 420px) { .form-grid { grid-template-columns: 1fr; } }
 
-.form-field label, .p-label, .filter-box label {
-  display: block; font-size: 13px; color: var(--muted); margin: 12px 0 6px; }
-.form-field:first-child label, .p-label:first-of-type, .filter-box label:first-child { margin-top: 0; }
+.p-label, .profile-card label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 6px; }
 
-.profile-card input, .profile-card textarea,
-.profile-card select, .filter-box input, .filter-box select {
+.profile-card input, .profile-card textarea, .profile-card select {
   width: 100%; padding: 11px 14px; border: 1px solid var(--line);
   border-radius: 12px; font-size: 15px; background: var(--card-deep);
   color: #eee; font-family: inherit; resize: vertical; }
 .profile-card textarea { min-height: 70px; }
-.profile-card select option, .filter-box select option { color: #222; }
-.profile-card input:focus, .profile-card textarea:focus, .profile-card select:focus,
-.filter-box input:focus, .filter-box select:focus {
+.profile-card select option { color: #222; }
+.profile-card input:focus, .profile-card textarea:focus, .profile-card select:focus {
   outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255,94,138,.15); }
-
 .profile-card .btn-main { margin-top: 18px; }
+.profile-note { margin-top: 10px; font-size: 13px; color: var(--muted-2); text-align: center; }
 
 .stats { display: flex; gap: 10px; margin-top: 16px; margin-bottom: 16px; }
 .stat { flex: 1; background: var(--card); border-radius: 16px; padding: 12px 4px; text-align: center; }
 .stat-num { font-size: 20px; font-weight: 800; color: var(--accent); }
 .stat-cap { font-size: 11px; color: var(--muted-2); }
 
-/* ---------- Счётчик «О себе» ---------- */
 .bio-note { font-size: 11px; color: var(--muted-2); margin-top: 4px; text-align: right; }
 .bio-note.warn { color: var(--accent); }
 
@@ -190,7 +187,6 @@ nav .badge { position: relative; display: inline-flex; align-items: center;
   cursor: pointer; }
 .btn-shop:hover { background: rgba(255,94,138,.15); }
 
-/* ---------- VIP ---------- */
 .vip-box { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 14px; }
 .vip-title { font-weight: 700; color: #ffd76e; margin-bottom: 4px; }
 .vip-sub { font-size: 12px; color: var(--muted-2); margin-bottom: 10px; }
@@ -198,12 +194,6 @@ nav .badge { position: relative; display: inline-flex; align-items: center;
   background: linear-gradient(90deg, #b8860b, #ffd76e); color: var(--card-deep); font-size: 14px;
   font-weight: 700; cursor: pointer; }
 .btn-vip:hover { filter: brightness(1.1); }
-
-/* ---------- Фильтр ---------- */
-.filter-box { background: var(--card); border-radius: 20px; padding: 22px 20px; }
-.ages { display: flex; gap: 10px; }
-.ages input { flex: 1; }
-.filter-note { margin-top: 10px; font-size: 13px; color: var(--muted-2); text-align: center; }
 
 .btn-logout { width: 100%; margin-top: 16px; padding: 12px; border: none; border-radius: 14px;
   background: none; color: var(--accent); font-size: 14px; font-weight: 600; cursor: pointer;
@@ -236,6 +226,29 @@ nav .badge { position: relative; display: inline-flex; align-items: center;
 .qty-btn:hover { border-color: var(--accent); }
 .gift-total { font-size: 14px; color: var(--muted); margin-bottom: 12px; }
 
-.hint { font-size: 12px; color: var(--muted-2); }
+/* ---------- Прямой эфир ---------- */
+#live-video-wrap { margin-top: 12px; }
+.live-video-frame { position: relative; border-radius: 20px; overflow: hidden;
+  background: #000; box-shadow: 0 12px 32px rgba(0,0,0,.5); }
+#live-video { display: block; width: 100%; aspect-ratio: 3 / 4; object-fit: cover;
+  background: #000; }
+#live-status { position: absolute; top: 10px; left: 10px; font-size: 12px; font-weight: 700;
+  background: rgba(0,0,0,.55); color: #fff; padding: 4px 12px; border-radius: 20px; }
+#live-chat-box { height: 180px; overflow-y: auto; background: var(--card);
+  border-radius: 14px; padding: 12px; margin-top: 10px; }
+#live-chat-row { display: flex; gap: 8px; margin-top: 8px; }
+#live-chat-input { flex: 1; padding: 10px 14px; border: 1px solid var(--line);
+  border-radius: 20px; font-size: 14px; background: var(--card-deep); color: #eee; }
+#live-chat-send { width: 42px; height: 42px; border-radius: 50%; border: none; font-size: 18px;
+  color: #fff; cursor: pointer; background: linear-gradient(90deg, var(--brand1), var(--accent)); }
+.live-chat-msg { font-size: 13px; margin-bottom: 8px; word-break: break-word; }
+.live-chat-msg b { color: var(--accent); }
+.live-chat-msg.me b { color: #ffd76e; }
 
-.empty { text-align: center; color: var(--muted-2); margin-top: 60px; }
+.btn-live-watch { margin-left: auto; padding: 8px 16px; border: none; border-radius: 12px;
+  background: linear-gradient(90deg, var(--brand1), var(--accent)); color: #fff;
+  font-size: 13px; font-weight: 700; cursor: pointer; }
+.btn-live-watch:hover { filter: brightness(1.1); }
+
+.hint { font-size: 12px; color: var(--muted-2); }
+.empty { text-align: center; color: var(--muted-2); margin-top: 40px; }
