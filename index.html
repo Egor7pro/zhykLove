@@ -8,37 +8,35 @@
 </head>
 <body>
 
-  <!-- Регистрация / Вход -->
+  <!-- Приветствие / Регистрация / Вход -->
   <div id="reg-screen">
     <div class="logo">zhykLove</div>
-    <p class="reg-sub">Знакомься рядом — просто и весело</p>
+    <p class="reg-sub">Знакомься рядом — просто и бесплатно</p>
 
-    <!-- Форма регистрации -->
-    <div id="reg-fields">
-      <input id="reg-email" type="email" placeholder="Email">
-      <input id="reg-pass" type="password" placeholder="Пароль (мин. 6 символов)">
-      <input id="reg-name" placeholder="Имя">
-      <input id="reg-age" type="number" placeholder="Возраст" min="18" max="99">
-      <select id="reg-gender">
-        <option value="">Твой пол...</option>
-        <option value="f">Девушка</option>
-        <option value="m">Парень</option>
-      </select>
-      <select id="reg-seeking">
-        <option value="">Я ищу...</option>
-        <option value="f">Девушек</option>
-        <option value="m">Парней</option>
-      </select>
-      <button class="btn-main" onclick="register()">Начать знакомиться</button>
-      <button class="btn-ghost" onclick="toggleAuth(true)">Уже есть аккаунт? Войти</button>
+    <!-- Приветствие -->
+    <div id="welcome-fields">
+      <button class="btn-main" onclick="enterAsGuest()">Смотреть анкеты</button>
+      <button class="btn-ghost" onclick="showAuthForm('reg')">Создать аккаунт</button>
+      <button class="btn-ghost" onclick="showAuthForm('login')">Войти</button>
     </div>
 
-    <!-- Форма входа -->
+    <!-- Форма регистрации: только почта и пароль -->
+    <div id="reg-fields" class="hidden">
+      <div class="auth-note" id="reg-note-top"></div>
+      <input id="reg-email" type="email" placeholder="Email">
+      <input id="reg-pass" type="password" placeholder="Придумайте пароль (мин. 6 символов)">
+      <input id="reg-pass2" type="password" placeholder="Повторите пароль">
+      <button class="btn-main" onclick="register()">Создать аккаунт</button>
+      <button class="btn-ghost" onclick="showAuthForm('welcome')">Назад</button>
+    </div>
+
+    <!-- Форма входа: только почта и пароль -->
     <div id="login-fields" class="hidden">
+      <div class="auth-note" id="login-note-top"></div>
       <input id="login-email" type="email" placeholder="Email">
       <input id="login-pass" type="password" placeholder="Пароль">
       <button class="btn-main" onclick="login()">Войти</button>
-      <button class="btn-ghost" onclick="toggleAuth(false)">Создать новый аккаунт</button>
+      <button class="btn-ghost" onclick="showAuthForm('welcome')">Назад</button>
     </div>
   </div>
 
@@ -46,9 +44,6 @@
   <header id="header" class="hidden">
     <div class="logo logo-sm">zhykLove</div>
     <div class="header-right">
-      <div class="header-coins" onclick="showScreen('profile')" title="Баланс монет">
-        💎 <span id="coins-count">0</span>
-      </div>
       <div class="header-ava" id="header-ava" onclick="showScreen('profile')">?</div>
     </div>
   </header>
@@ -81,21 +76,9 @@
 
     <div id="chat-box"></div>
 
-    <div id="chat-extra">
-      <button class="btn-ghost" onclick="openGifts()">🎁 Подарить подарок</button>
-    </div>
-
     <div id="chat-input-row">
       <input id="chat-input" placeholder="Сообщение..." maxlength="2000">
       <button id="chat-send" onclick="sendMessage()">➤</button>
-    </div>
-
-    <div id="pay-wall" class="hidden">
-      <div class="paywall-note">
-        Бесплатный лимит символов закончился
-      </div>
-      <button class="btn-shop" onclick="showScreen('profile')">Купить монеты</button>
-      <button class="btn-vip" onclick="buyVip()">VIP — безлимит (1800 ₽/мес · 16800 ₽/год)</button>
     </div>
   </div>
 
@@ -243,31 +226,6 @@
       <div class="profile-note" id="prof-note"></div>
     </div>
 
-    <!-- Магазин монет -->
-    <h3 class="section" style="margin-top:20px">Магазин монет</h3>
-    <div class="shop-box">
-      <div class="coins-row">💎 Баланс: <b id="shop-coins">0</b> монет</div>
-      <div class="coins-row"><span class="hint">1 монета — 15 символов · 25 ₽</span></div>
-
-      <div class="quick-buy">
-        <button class="btn-shop" onclick="buyCoins(10)">10 монет — 250 ₽</button>
-        <button class="btn-shop" onclick="buyCoins(50)">50 монет — 1250 ₽</button>
-        <button class="btn-shop" onclick="buyCoins(100)">100 монет — 2500 ₽</button>
-      </div>
-
-      <div class="custom-buy">
-        <input id="buy-custom" type="number" min="10" placeholder="Своё количество (от 10)">
-        <button class="btn-main" onclick="buyCustom()">Купить</button>
-      </div>
-
-      <div class="vip-box">
-        <div class="vip-title">VIP — безлимитные сообщения</div>
-        <div class="vip-sub">Пишите сколько угодно, пока активна подписка</div>
-        <button class="btn-vip" onclick="buyVip()">Месяц — 1800 ₽</button>
-        <button class="btn-vip" onclick="buyVip()">Год — 16800 ₽</button>
-      </div>
-    </div>
-
     <button class="btn-logout" onclick="logout()">Выйти из аккаунта</button>
   </div>
 
@@ -279,28 +237,6 @@
       <p id="match-text"></p>
       <button class="btn-main" onclick="closeMatch()">Написать сообщение</button>
       <button class="btn-ghost" onclick="closeMatch(true)">Позже</button>
-    </div>
-  </div>
-
-  <!-- Попап подарков -->
-  <div id="gift-modal" class="modal hidden">
-    <div class="modal-box">
-      <h2>🎁 Подарок</h2>
-      <p id="gift-to"></p>
-
-      <div id="gift-list"></div>
-
-      <div class="gift-qty-row">
-        <button class="qty-btn" onclick="changeQty(-1)">−</button>
-        <span id="gift-qty">1</span>
-        <button class="qty-btn" onclick="changeQty(1)">+</button>
-      </div>
-      <div class="hint" style="text-align:center">Сначала выбери подарок, потом количество</div>
-
-      <div class="gift-total" id="gift-total">Выберите подарок</div>
-
-      <button class="btn-main" onclick="sendGift()">Оплатить и подарить</button>
-      <button class="btn-ghost" onclick="closeGift()">Отмена</button>
     </div>
   </div>
 

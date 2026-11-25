@@ -41,27 +41,11 @@ function personAvaHtml(u) {
   return avaInitial(u.name);
 }
 
-// ---- Настройки монетизации ----
-const FREE_CHARS = 20;
-const CHARS_PER_COIN = 15;
-const COIN_PRICE = 25;
-const MIN_PACK = 10;
-const VIP_MONTH_PRICE = 1800;
-const VIP_YEAR_PRICE = 16800;
+// ---- Настройки ----
 const PHOTO_MAX = 400;
 
-// ---- Подарки (демо-оплата) ----
-const GIFTS = [
-  { id: 'heart', name: 'сердечко', emoji: '❤️', price: 125000 },
-  { id: 'yacht', name: 'яхта',     emoji: '🛥️', price: 14700 },
-  { id: 'bed',   name: 'кровать',  emoji: '🛏️', price: 4500 },
-  { id: 'car',   name: 'машина',   emoji: '🚗', price: 2600 },
-  { id: 'ring',  name: 'кольцо',   emoji: '💍', price: 400 },
-  { id: 'rose',  name: 'роза',     emoji: '🌹', price: 25 },
-];
-
 // ---- Состояние ----
-const STATE_VERSION = 14;
+const STATE_VERSION = 18;
 
 function stateKey() {
   return 'zhyklove_v' + STATE_VERSION + '_' + (currentUser ? currentUser.id : 'guest');
@@ -70,15 +54,10 @@ function stateKey() {
 function defaultState() {
   return {
     me: null,
-    seen: [],
-    likes: [],
-    matches: [],
-    chats: {},
-    coins: 0,
-    freeCharsLeft: FREE_CHARS,
-    vip: false,
-    vipType: null,
-    vipUntil: null
+    seen: [],        // анкеты, которые уже листал в ленте
+    likedSeen: [],   // входящие лайки, решение по которым уже принято
+    matches: [],     // взаимные лайки
+    chats: {}
   };
 }
 
@@ -101,10 +80,8 @@ function loadStateForUser() {
     if (!s.me) return null;
     s.me = Object.assign(defaultMe(), s.me);
     s.seen = (s.seen || []).map(String);
-    s.likes = (s.likes || []).map(String);
+    s.likedSeen = (s.likedSeen || []).map(String);
     s.matches = (s.matches || []).map(String);
-    if (s.coins === undefined) s.coins = 0;
-    if (s.freeCharsLeft === undefined) s.freeCharsLeft = FREE_CHARS;
     return s;
   } catch { return null; }
 }
@@ -116,63 +93,90 @@ let currentChat = null;
 let chatMessages = [];
 let chatChannel = null;
 
+// Подписка на входящие лайки в реальном времени
+let likesChannel = null;
+
+// Входящие лайки (кто лайкнул меня и ждёт решения)
+let incomingLikes = [];
+
+// Отложенное действие: регистрируемся, чтобы продолжить лайк/сообщение
+let pendingAction = null;
+
 // ---- Поиск анкеты по id (строковое сравнение) ----
 function findPerson(id) {
   return dbProfiles.find(x => String(x.id) === String(id));
 }
 
-// ---- Переключение регистрация/вход ----
-function toggleAuth(showLogin) {
-  document.getElementById('reg-fields').classList.toggle('hidden', showLogin);
-  document.getElementById('login-fields').classList.toggle('hidden', !showLogin);
+// ---- Экраны входа/регистрации/приветствия ----
+function showAuthForm(which) {
+  document.getElementById('welcome-fields').classList.toggle('hidden', which !== 'welcome');
+  document.getElementById('reg-fields').classList.toggle('hidden', which !== 'reg');
+  document.getElementById('login-fields').classList.toggle('hidden', which !== 'login');
+
+  const regNote = document.getElementById('reg-note-top');
+  const loginNote = document.getElementById('login-note-top');
+  if (regNote) regNote.textContent = (which === 'reg' && pendingAction)
+    ? 'Чтобы продолжить, создайте аккаунт — это займёт полминуты' : '';
+  if (loginNote) loginNote.textContent = (which === 'login' && pendingAction)
+    ? 'Войдите, чтобы продолжить' : '';
 }
 
-// ---- VIP ----
-function vipActive() {
-  if (!state.vip) return false;
-  if (state.vipUntil && Date.now() > state.vipUntil) {
-    state.vip = false;
-    state.vipType = null;
-    state.vipUntil = null;
-    save();
-    return false;
+// Гостевой режим: смотрим ленту без аккаунта
+function enterAsGuest() {
+  currentUser = null;
+  state = defaultState();
+  document.getElementById('reg-screen').classList.add('hidden');
+  document.getElementById('nav').classList.remove('hidden');
+  document.getElementById('header').classList.remove('hidden');
+  showScreen('home');
+}
+
+// Барьер регистрации: лайк гостя → форма регистрации, лента прячется
+function openAuthGate(action) {
+  pendingAction = action || null;
+
+  // Лента, шапка и нижняя панель исчезают — остаётся только форма
+  document.getElementById('nav').classList.add('hidden');
+  document.getElementById('header').classList.add('hidden');
+  ['home','likes','chats','chat','live','profile'].forEach(x =>
+    document.getElementById('screen-' + x).classList.add('hidden'));
+
+  document.getElementById('reg-screen').classList.remove('hidden');
+  showAuthForm('reg');
+}
+
+// Спрятать экран входа/регистрации
+function hideAuthScreen() {
+  document.getElementById('reg-screen').classList.add('hidden');
+}
+
+// После регистрации/входа: выполнить то, ради чего человек регистрировался
+async function runPendingAction() {
+  const action = pendingAction;
+  pendingAction = null;
+
+  if (!action) {
+    // Новичку сразу открываем анкету — пусть заполнит
+    showScreen('profile');
+    const note = document.getElementById('prof-note');
+    if (note) note.textContent = 'Добро пожаловать! Заполните анкету — имя, возраст и город';
+    return;
   }
-  return true;
-}
 
-// ---- Стоимость сообщения ----
-function messageCost(chars) {
-  if (vipActive()) return { covered: chars, coins: 0 };
-  const free = Math.min(chars, state.freeCharsLeft);
-  const rest = chars - free;
-  return { covered: free, coins: Math.ceil(rest / CHARS_PER_COIN) };
-}
+  if (action.type === 'like' && action.id) {
+    await doLike(action.id);
+    return;
+  }
 
-function limitsExhausted() {
-  if (vipActive()) return false;
-  return state.freeCharsLeft <= 0;
-}
-
-function updateCoinsUI() {
-  const wall = document.getElementById('pay-wall');
-  if (wall) wall.classList.toggle('hidden', !limitsExhausted());
-  const header = document.getElementById('coins-count');
-  if (header) header.textContent = state.coins;
-  const shop = document.getElementById('shop-coins');
-  if (shop) shop.textContent = state.coins;
-}
-
-// ---- Демо-оплата ----
-function payRub(amount, description, onPaid) {
-  const ok = confirm(
-    `Оплата: ${description}\nСумма: ${amount.toLocaleString('ru-RU')} ₽\n\n` +
-    `(демо-оплата — реальный платёжный шлюз не подключён)`
-  );
-  if (ok) onPaid();
+  if (action.type === 'message' && action.text && currentChat) {
+    const ok = await insertMessage(action.text);
+    if (ok) document.getElementById('chat-input').value = '';
+  }
 }
 
 // ---- Аватар: фото или первая буква имени ----
 function renderAva(element) {
+  if (!state.me) { element.textContent = '?'; return; }
   if (state.me.photo) {
     element.innerHTML = `<img src="${state.me.photo}" alt="Аватар">`;
   } else {
@@ -222,18 +226,15 @@ function removePhoto() {
   document.getElementById('photo-remove').classList.add('hidden');
 }
 
-// ---- Регистрация ----
+// ---- Регистрация: только почта и пароль ----
 async function register() {
   const email = document.getElementById('reg-email').value.trim();
   const pass = document.getElementById('reg-pass').value;
-  const name = document.getElementById('reg-name').value.trim();
-  const age = +document.getElementById('reg-age').value;
-  const gender = document.getElementById('reg-gender').value;
-  const seeking = document.getElementById('reg-seeking').value;
+  const pass2 = document.getElementById('reg-pass2').value;
 
-  if (!name || !age || age < 18 || !gender || !seeking) return alert('Заполните все поля (18+)');
   if (!email || !email.includes('@')) return alert('Укажите корректный email');
   if (pass.length < 6) return alert('Пароль — минимум 6 символов');
+  if (pass !== pass2) return alert('Пароли не совпадают');
 
   const { data, error } = await sb.auth.signUp({ email, password: pass });
   if (error) return alert('Ошибка регистрации: ' + error.message);
@@ -246,16 +247,20 @@ async function register() {
   currentUser = data.user;
 
   state = defaultState();
-  state.me = Object.assign(defaultMe(), { name, age, gender, seeking });
-  state.freeCharsLeft = FREE_CHARS;
+  state.me = Object.assign(defaultMe(), { name: email.split('@')[0] });
   save();
 
-  saveProfileToDb();
+  await saveProfileToDb();
   await loadProfiles();
+  await loadIncomingLikes();
+
+  // Сразу в приложение — без экрана входа
+  hideAuthScreen();
   enterApp();
+  await runPendingAction();
 }
 
-// ---- Вход ----
+// ---- Вход: только почта и пароль (после выхода из аккаунта) ----
 async function login() {
   const email = document.getElementById('login-email').value.trim();
   const pass = document.getElementById('login-pass').value;
@@ -288,7 +293,11 @@ async function login() {
   }
   save();
   await loadProfiles();
+  await loadIncomingLikes();
+
+  hideAuthScreen();
   enterApp();
+  await runPendingAction();
 }
 
 function enterApp() {
@@ -298,7 +307,7 @@ function enterApp() {
   updateAvas();
   document.getElementById('photo-remove').classList.toggle('hidden', !state.me.photo);
   showScreen('home');
-  updateCoinsUI();
+  subscribeLikes();
 }
 
 // ---- Выход ----
@@ -307,22 +316,28 @@ function logout() {
   leaveLive();
   closeLiveIndex();
   if (chatChannel) { sb.removeChannel(chatChannel); chatChannel = null; }
+  if (likesChannel) { sb.removeChannel(likesChannel); likesChannel = null; }
   sb.auth.signOut();
   localStorage.removeItem(stateKey());
   currentUser = null;
   state = defaultState();
   dbProfiles = [];
-  document.getElementById('reg-screen').classList.remove('hidden');
-  document.getElementById('reg-fields').classList.remove('hidden');
-  document.getElementById('login-fields').classList.add('hidden');
+  incomingLikes = [];
+
+  // Возврат на приветственный экран — вход понадобится при следующем визите
   document.getElementById('nav').classList.add('hidden');
   document.getElementById('header').classList.add('hidden');
   ['home','likes','chats','chat','live','profile'].forEach(x =>
     document.getElementById('screen-' + x).classList.add('hidden'));
+  document.getElementById('reg-screen').classList.remove('hidden');
+  showAuthForm('welcome');
 }
 
 // ---- Навигация ----
 function showScreen(s) {
+  // Гость: доступна только лента — остальные кнопки нижней панели не срабатывают
+  if (!currentUser && s !== 'home') return;
+
   ['home','likes','chats','chat','live','profile'].forEach(x =>
     document.getElementById('screen-' + x).classList.toggle('hidden', x !== s));
   ['home','likes','chats','live','profile'].forEach(x => {
@@ -334,18 +349,111 @@ function showScreen(s) {
   if (s === 'chats') renderChats();
   if (s === 'live') { if (!liveIndexChannel) openLiveIndex(); }
   if (s === 'profile') renderProfile();
-  if (s === 'chat') updateCoinsUI();
   updateBadges();
 }
 
 function updateBadges() {
   const lb = document.getElementById('likes-badge');
-  if (state.likes.length) { lb.textContent = state.likes.length; lb.classList.remove('hidden'); }
+  if (incomingLikes.length) { lb.textContent = incomingLikes.length; lb.classList.remove('hidden'); }
   else lb.classList.add('hidden');
   const cb = document.getElementById('chats-badge');
   const unread = Object.values(state.chats).reduce((n, msgs) => n + (msgs.length && !msgs[msgs.length-1].me ? 1 : 0), 0);
   if (unread) { cb.textContent = unread; cb.classList.remove('hidden'); }
   else cb.classList.add('hidden');
+}
+
+// ---- Лайки в базе ----
+
+// Поставить лайк человеку. Если он уже лайкнул тебя — это взаимно.
+async function likeUser(targetId) {
+  targetId = String(targetId);
+
+  // ФИКС: лайкать самого себя нельзя — иначе получается матч и чат с самим собой
+  if (currentUser && targetId === String(currentUser.id)) return false;
+
+  const { error } = await sb.from('likes').insert({
+    liker_id: currentUser.id,
+    liked_id: targetId
+  });
+  if (error) {
+    // уникальный индекс: лайк уже был — это не ошибка для пользователя
+    if (!String(error.message).includes('duplicate')) {
+      console.error('ОШИБКА лайка:', error.message);
+      alert('Лайк не сохранился: ' + error.message);
+      return false;
+    }
+  }
+
+  // Проверяем: он уже лайкал меня?
+  const { data: back } = await sb.from('likes')
+    .select('*')
+    .eq('liker_id', targetId)
+    .eq('liked_id', currentUser.id)
+    .maybeSingle();
+
+  if (back) {
+    if (!state.matches.includes(targetId)) {
+      state.matches.push(targetId);
+      if (!state.chats[targetId]) state.chats[targetId] = [];
+    }
+  }
+
+  save();
+  updateBadges();
+  return !!back; // true — это взаимный лайк
+}
+
+// Загрузить входящие лайки (кто лайкнул меня, по кому решения ещё нет)
+async function loadIncomingLikes() {
+  const { data, error } = await sb.from('likes')
+    .select('liker_id')
+    .eq('liked_id', currentUser.id);
+  if (error) {
+    console.error('ОШИБКА загрузки лайков:', error.message);
+    incomingLikes = [];
+    return;
+  }
+  incomingLikes = (data || [])
+    .map(l => String(l.liker_id))
+    .filter(id => !state.likedSeen.includes(id) && !state.matches.includes(id) && id !== currentUser.id);
+  updateBadges();
+}
+
+// Мгновенное уведомление о новых лайках
+function subscribeLikes() {
+  if (!currentUser) return;
+  if (likesChannel) { sb.removeChannel(likesChannel); likesChannel = null; }
+  likesChannel = sb.channel('likes-' + currentUser.id)
+    .on('postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'likes', filter: `liked_id=eq.${currentUser.id}` },
+      async (payload) => {
+        const likerId = String(payload.new.liker_id);
+        await loadIncomingLikes();
+        const u = findPerson(likerId);
+        if (u && incomingLikes.includes(likerId)) {
+          alert(`💜 Тебя лайкнул ${u.name}! Открой раздел ❤️ и реши: лайкнуть в ответ или пройти мимо.`);
+        }
+      })
+    .subscribe();
+}
+
+// Принять или отклонить входящий лайк
+async function decideLike(likerId, accept) {
+  likerId = String(likerId);
+  if (!state.likedSeen.includes(likerId)) state.likedSeen.push(likerId);
+  incomingLikes = incomingLikes.filter(id => id !== likerId);
+
+  if (accept) {
+    const mutual = await likeUser(likerId);
+    if (mutual) {
+      openMatch(likerId);
+      save();
+      renderLikes();
+      return;
+    }
+  }
+  save();
+  renderLikes();
 }
 
 // ---- Лента анкет ----
@@ -355,9 +463,32 @@ function allPeople() {
 }
 
 function candidates() {
-  return allPeople()
-    .filter(u => u.id && !state.seen.includes(String(u.id)))
-    .filter(u => !state.me.seeking || u.gender === state.me.seeking);
+  let list = allPeople()
+    .filter(u => u.id && !state.seen.includes(String(u.id)));
+  // У гостя нет анкеты — показываем все анкеты без фильтра по полу
+  if (state.me && state.me.seeking) {
+    list = list.filter(u => u.gender === state.me.seeking);
+  }
+  return list;
+}
+
+// Поставить лайк конкретному человеку (используется и после регистрации)
+async function doLike(id) {
+  // ФИКС: если после регистрации выяснилось, что лайкнули свою анкету —
+  // просто возвращаемся в ленту без матча
+  if (currentUser && String(id) === String(currentUser.id)) {
+    renderHome();
+    return;
+  }
+
+  const mutual = await likeUser(id);
+  renderHome();
+  if (mutual) {
+    openMatch(id);
+    return;
+  }
+  const u = findPerson(id);
+  if (u) alert('Лайк отправлен! Если ' + u.name + ' лайкнет тебя в ответ — получите матч 💜');
 }
 
 // ---- Главная ----
@@ -382,17 +513,43 @@ function renderHome() {
     </div>`;
 }
 
-function swipe(like) {
+async function swipe(like) {
   const u = candidates()[0];
   if (!u) return;
-  state.seen.push(String(u.id));
-  if (like) {
-    const uid = String(u.id);
-    state.likes.push(uid);
-    if (!state.matches.includes(uid)) state.matches.push(uid);
-    if (!state.chats[uid]) state.chats[uid] = [];
-    openMatch(uid);
+
+  // ФИКС: зарегистрированный пользователь не может лайкнуть свою анкету
+  if (like && currentUser && String(u.id) === String(currentUser.id)) {
+    state.seen.push(String(u.id));
+    save();
+    renderHome();
+    return;
   }
+
+  // Гость жмёт лайк → анкета уходит в «просмотренные»,
+  // лента прячется и открывается форма регистрации
+  if (like && !currentUser) {
+    state.seen.push(String(u.id));
+    save();
+    openAuthGate({ type: 'like', id: String(u.id) });
+    return;
+  }
+
+  state.seen.push(String(u.id));
+
+  if (like) {
+    const mutual = await likeUser(u.id);
+    if (mutual) {
+      save();
+      renderHome();
+      openMatch(u.id);
+      return;
+    }
+    save();
+    renderHome();
+    alert('Лайк отправлен! Если ' + u.name + ' лайкнет тебя в ответ — получите матч 💜');
+    return;
+  }
+
   save();
   renderHome();
 }
@@ -408,7 +565,8 @@ let matchUserId = null;
 function openMatch(id) {
   matchUserId = id;
   const u = findPerson(id);
-  document.getElementById('match-text').textContent = 'Вы с ' + u.name + ' совпали! Напишите первым 😉';
+  if (!u) return;
+  document.getElementById('match-text').textContent = 'Вы с ' + u.name + ' лайкнули друг друга! Напишите первым 😉';
   document.getElementById('match-modal').classList.remove('hidden');
 }
 function closeMatch(gotoChat) {
@@ -417,29 +575,54 @@ function closeMatch(gotoChat) {
   matchUserId = null;
 }
 
-// ---- Лайкнутые ----
-function renderLikes() {
+// ---- Лайкнутые / входящие лайки ----
+async function renderLikes() {
+  if (!currentUser) return;
+  await loadIncomingLikes();
+
   const box = document.getElementById('likes-list');
-  const list = state.likes.map(id => findPerson(id)).filter(Boolean);
-  if (!list.length) {
-    box.innerHTML = '<div class="empty">Пока никто не лайкнут.<br>Ставь ❤ на главной!</div>';
-    return;
+  const matches = state.matches.map(id => findPerson(id)).filter(Boolean);
+  const incoming = incomingLikes.map(id => findPerson(id)).filter(Boolean);
+
+  let html = '';
+
+  if (incoming.length) {
+    html += '<div class="likes-title">Тебя лайкнули — реши, что ответить:</div>';
+    html += incoming.map(u => `
+      <div class="person-row">
+        <div class="ava">${personAvaHtml(u)}</div>
+        <div><div class="name">${u.name}, ${u.age}</div>
+        <div class="sub">${u.city}</div></div>
+        <div class="like-decide">
+          <button class="btn-decide yes" onclick="decideLike('${u.id}', true)">❤</button>
+          <button class="btn-decide no" onclick="decideLike('${u.id}', false)">✕</button>
+        </div>
+      </div>`).join('');
   }
-  box.innerHTML = list.map(u => {
-    const isMatch = state.matches.includes(String(u.id));
-    return `
-    <div class="person-row" onclick="${isMatch ? `openChat('${u.id}')` : ''}">
-      <div class="ava">${personAvaHtml(u)}</div>
-      <div><div class="name">${u.name}, ${u.age}</div>
-      <div class="sub">${u.city}</div></div>
-      <div class="tag ${isMatch ? 'match' : 'wait'}">${isMatch ? 'Взаимно 💜' : 'Ждёт ответа'}</div>
-    </div>`;
-  }).join('');
+
+  if (matches.length) {
+    html += '<div class="likes-title">Взаимно 💜 — можно писать:</div>';
+    html += matches.map(u => `
+      <div class="person-row" onclick="openChat('${u.id}')">
+        <div class="ava">${personAvaHtml(u)}</div>
+        <div><div class="name">${u.name}, ${u.age}</div>
+        <div class="sub">${u.city}</div></div>
+        <div class="tag match">Матч</div>
+      </div>`).join('');
+  }
+
+  if (!html) {
+    html = '<div class="empty">Пока никого.<br>Ставь ❤ на главной — и проверяй этот экран: когда тебя лайкнут, уведомление появится здесь ❤</div>';
+  }
+
+  box.innerHTML = html;
+  updateBadges();
 }
 
 // ---- Профиль ----
 function renderProfile() {
   const me = state.me;
+  if (!me) return;
   renderAva(document.getElementById('profile-ava'));
   document.getElementById('prof-name').value = me.name;
   document.getElementById('prof-age').value = me.age;
@@ -456,10 +639,9 @@ function renderProfile() {
   document.getElementById('prof-note').textContent = '';
   updateBioCount();
   document.getElementById('photo-remove').classList.toggle('hidden', !me.photo);
-  document.getElementById('stat-likes').textContent = state.likes.length;
+  document.getElementById('stat-likes').textContent = incomingLikes.length;
   document.getElementById('stat-matches').textContent = state.matches.length;
   document.getElementById('stat-chats').textContent = Object.keys(state.chats).filter(k => state.chats[k].length).length;
-  updateCoinsUI();
 }
 
 function updateBioCount() {
@@ -531,130 +713,12 @@ async function saveProfile() {
 document.getElementById('prof-bio').addEventListener('input', updateBioCount);
 document.getElementById('photo-input').addEventListener('change', handlePhoto);
 
-// ---- Магазин монет ----
-function buyCoins(n) {
-  n = Math.floor(+n);
-  if (!n || n < MIN_PACK) return alert(`Минимум для покупки — ${MIN_PACK} монет`);
-  const cost = n * COIN_PRICE;
-  payRub(cost, `${n} монет`, () => {
-    state.coins += n;
-    save();
-    updateCoinsUI();
-    alert(`Начислено ${n} монет 💎`);
-  });
-}
-
-function buyCustom() {
-  const n = +document.getElementById('buy-custom').value;
-  buyCoins(n);
-  document.getElementById('buy-custom').value = '';
-}
-
-function buyVip() {
-  if (vipActive()) {
-    const until = new Date(state.vipUntil).toLocaleDateString('ru-RU');
-    alert(`У вас уже активен VIP до ${until}`);
-    return;
-  }
-  const choice = prompt(
-    `VIP-подписка — безлимитные сообщения:\n` +
-    `1 — месяц за ${VIP_MONTH_PRICE} ₽\n` +
-    `2 — год за ${VIP_YEAR_PRICE} ₽\n\nВведите 1 или 2:`
-  );
-  if (choice === '1') {
-    payRub(VIP_MONTH_PRICE, 'VIP на месяц (безлимит)', () => {
-      state.vip = true;
-      state.vipType = 'month';
-      state.vipUntil = Date.now() + 30 * 24 * 60 * 60 * 1000;
-      save();
-      updateCoinsUI();
-      alert('VIP активирован! ✨ Безлимитные сообщения включены.');
-    });
-  } else if (choice === '2') {
-    payRub(VIP_YEAR_PRICE, 'VIP на год (безлимит)', () => {
-      state.vip = true;
-      state.vipType = 'year';
-      state.vipUntil = Date.now() + 365 * 24 * 60 * 60 * 1000;
-      save();
-      updateCoinsUI();
-      alert('VIP активирован! ✨ Безлимитные сообщения включены.');
-    });
-  }
-}
-
-// ---- Подарки ----
-let gift = { id: null, qty: 1 };
-
-function openGifts() {
-  if (currentChat === null) return alert('Открой чат с человеком, которому хочешь подарить');
-  const u = findPerson(currentChat);
-  if (!u) return alert('Не удалось найти получателя подарка');
-  gift = { id: null, qty: 1 };
-  document.getElementById('gift-to').textContent = `Кому: ${u.name}`;
-  document.getElementById('gift-qty').textContent = '1';
-  document.getElementById('gift-total').textContent = 'Выберите подарок';
-  renderGiftList();
-  document.getElementById('gift-modal').classList.remove('hidden');
-}
-
-function renderGiftList() {
-  const box = document.getElementById('gift-list');
-  if (!box) return;
-  box.innerHTML = GIFTS.map(g => `
-    <div class="gift-item ${gift.id === g.id ? 'sel' : ''}" data-id="${g.id}" onclick="pickGift('${g.id}')">
-      <span class="gift-emoji">${g.emoji}</span>
-      <span>${g.name}</span>
-      <span class="gift-price">${g.price.toLocaleString('ru-RU')} ₽</span>
-    </div>`).join('');
-}
-
-function closeGift() {
-  document.getElementById('gift-modal').classList.add('hidden');
-}
-
-function pickGift(id) {
-  gift.id = id;
-  gift.qty = 1;
-  document.getElementById('gift-qty').textContent = '1';
-  renderGiftList();
-  updateGiftTotal();
-}
-
-function changeQty(delta) {
-  if (!gift.id) return;
-  gift.qty = Math.max(1, gift.qty + delta);
-  document.getElementById('gift-qty').textContent = gift.qty;
-  updateGiftTotal();
-}
-
-function updateGiftTotal() {
-  const g = GIFTS.find(x => x.id === gift.id);
-  if (!g) return;
-  document.getElementById('gift-total').textContent =
-    `Итого: ${(g.price * gift.qty).toLocaleString('ru-RU')} ₽ (${gift.qty} шт.)`;
-}
-
-async function sendGift() {
-  if (!gift.id) return alert('Сначала выберите подарок в списке');
-  const g = GIFTS.find(x => x.id === gift.id);
-  const total = g.price * gift.qty;
-  const u = findPerson(currentChat);
-  if (!u) return alert('Не удалось найти получателя подарка');
-
-  payRub(total, `${g.emoji} ${g.name} × ${gift.qty} для ${u.name}`, async () => {
-    const text = `${g.emoji} Подарок: ${g.name} × ${gift.qty} (оплачено ${total.toLocaleString('ru-RU')} ₽)`;
-    await insertMessage(text);
-    closeGift();
-    renderChat();
-  });
-}
-
 // ---- Чаты ----
 function renderChats() {
   const box = document.getElementById('chats-list');
   const list = state.matches.map(id => findPerson(id)).filter(Boolean);
   if (!list.length) {
-    box.innerHTML = '<div class="empty">Пока пусто. Ставьте ❤ на главной!</div>';
+    box.innerHTML = '<div class="empty">Пока пусто. Взаимные лайки появятся в чатах!</div>';
     return;
   }
   box.innerHTML = list.map(u => {
@@ -670,6 +734,9 @@ function renderChats() {
 }
 
 async function openChat(id) {
+  if (!currentUser) return;
+  // ФИКС: чат с самим собой невозможен
+  if (String(id) === String(currentUser.id)) return;
   currentChat = String(id);
   showScreen('chat');
   const u = findPerson(currentChat);
@@ -685,7 +752,6 @@ async function openChat(id) {
 
   await loadChatMessages();
   subscribeToChat();
-  updateCoinsUI();
 }
 
 // Загрузка переписки из базы
@@ -754,38 +820,14 @@ async function sendMessage() {
   const text = input.value.trim();
   if (!text || currentChat === null) return;
 
-  const chars = text.length;
-  const cost = messageCost(chars);
-
-  if (cost.coins > state.coins) {
-    const need = cost.coins - state.coins;
-    if (!confirm(
-      `Не хватает ${need} 💎 на это сообщение.\n` +
-      `Перейти в магазин в профиле?`
-    )) return;
-    showScreen('profile');
+  // Не зарегистрирован → форма регистрации, потом сообщение уйдёт само
+  if (!currentUser) {
+    openAuthGate({ type: 'message', text: text });
     return;
-  }
-
-  if (cost.coins > 0) state.coins -= cost.coins;
-
-  if (!vipActive()) {
-    state.freeCharsLeft -= cost.covered;
-    if (state.freeCharsLeft < 0) state.freeCharsLeft = 0;
   }
 
   const ok = await insertMessage(text);
-  if (!ok) {
-    state.coins += cost.coins;
-    if (!vipActive()) {
-      state.freeCharsLeft += cost.covered;
-    }
-    updateCoinsUI();
-    return;
-  }
-  save();
-  input.value = '';
-  updateCoinsUI();
+  if (ok) input.value = '';
 }
 
 document.getElementById('chat-input').addEventListener('keydown', e => {
@@ -794,16 +836,37 @@ document.getElementById('chat-input').addEventListener('keydown', e => {
 
 // ---- Прямой эфир (WebRTC + Supabase Realtime) ----
 // Ведущий публикует камеру, зрители смотрят напрямую у ведущего (mesh).
+// Чат эфира: общий и одноразовый — история не сохраняется.
+// Пишут только зрители, ведущий читает.
 const RTC_CFG = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
-let liveIndexChannel = null;  // общий канал со списком эфиров (presence)
-let liveChannel = null;       // сигналинг-канал текущего эфира
-let liveRole = null;          // 'host' | 'viewer'
-let liveRoom = null;          // id ведущего
-let liveStream = null;        // локальная камера ведущего
-const hostPcs = new Map();    // ведущий: viewerId -> RTCPeerConnection
-let viewerPc = null;          // зритель: одно подключение
-let gotOffer = false;         // пришло ли видео от ведущего
+let liveIndexChannel = null;   // общий канал со списком эфиров (presence)
+let liveChannel = null;        // сигналинг-канал текущего эфира
+let liveRole = null;           // 'host' | 'viewer'
+let liveRoom = null;           // id ведущего
+let liveStream = null;         // локальная камера ведущего
+const hostPcs = new Map();     // ведущий: viewerId -> RTCPeerConnection
+const hostIceQueues = new Map(); // ведущий: viewerId -> очередь ICE-кандидатов
+let viewerPc = null;           // зритель: одно подключение
+let viewerIceQueue = [];       // очередь ICE-кандидатов зрителя
+let viewerConnected = false;   // подключился ли зритель к видео
+let helloTimer = null;         // повторные запросы подключения зрителя
+
+// Очередь ICE: кандидат применяется сразу, если подключение готово,
+// иначе ждёт в очереди — так ничего не теряется
+function pushIce(pc, queue, cand) {
+  if (pc && pc.remoteDescription) {
+    pc.addIceCandidate(cand).catch(console.error);
+  } else {
+    queue.push(cand);
+  }
+}
+
+function flushIce(pc, queue) {
+  if (!pc) return;
+  queue.forEach(c => pc.addIceCandidate(c).catch(console.error));
+  queue.length = 0;
+}
 
 function openLiveIndex() {
   liveIndexChannel = sb.channel('live-index', { config: { presence: { key: currentUser.id } } });
@@ -867,13 +930,18 @@ async function startLive() {
   document.getElementById('live-video-wrap').classList.remove('hidden');
   document.getElementById('live-status').textContent = '🔴 В эфире · ты ведущий';
   document.getElementById('live-chat-box').innerHTML = '';
+
+  // Ведущий только читает чат — ввод скрыт
+  const chatRow = document.getElementById('live-chat-row');
+  if (chatRow) chatRow.classList.add('hidden');
 }
 
 async function watchLive(broadcasterId) {
   if (liveRole) return alert('Сначала выйди из текущего эфира');
   liveRole = 'viewer';
   liveRoom = String(broadcasterId);
-  gotOffer = false;
+  viewerConnected = false;
+  viewerIceQueue = [];
 
   document.getElementById('btn-start-live').classList.add('hidden');
   document.getElementById('live-list').classList.add('hidden');
@@ -881,21 +949,29 @@ async function watchLive(broadcasterId) {
   document.getElementById('live-status').textContent = '⏳ Подключаемся к эфиру...';
   document.getElementById('live-chat-box').innerHTML = '';
 
+  // Зритель может писать в общий чат
+  const chatRow = document.getElementById('live-chat-row');
+  if (chatRow) chatRow.classList.remove('hidden');
+
   joinSignaling(liveRoom);
 
-  // если ведущий не ответил за 7 секунд — сообщаем
+  // если за 40 секунд так и не подключились — сообщаем
   setTimeout(() => {
-    if (liveRole === 'viewer' && !gotOffer) {
+    if (liveRole === 'viewer' && !viewerConnected) {
       document.getElementById('live-status').textContent = 'Эфир недоступен — возможно, ведущий уже закончил';
     }
-  }, 7000);
+  }, 40000);
 }
 
 function joinSignaling(room) {
   liveChannel = sb.channel('live-' + room, { config: { presence: { key: currentUser.id } } });
+
+  // Чат эфира: слушают все — и ведущий, и зрители.
+  // Своё сообщение отправитель дорисовывает локально (broadcast не эхоится себе).
   liveChannel
     .on('broadcast', { event: 'chat' }, ({ payload }) => {
-      renderLiveChat(payload.name || 'Гость', payload.text, payload.from === currentUser.id);
+      if (payload.from === currentUser.id) return;
+      renderLiveChat(payload.name || 'Гость', payload.text, false);
     });
 
   if (liveRole === 'host') {
@@ -909,27 +985,45 @@ function joinSignaling(room) {
       .on('broadcast', { event: 'offer' }, ({ payload }) => onHostOffer(payload))
       .on('broadcast', { event: 'ice' }, ({ payload }) => onLiveIce(payload))
       .subscribe(status => {
-        if (status === 'SUBSCRIBED') {
-          liveChannel.send({ type: 'broadcast', event: 'hello', payload: { from: currentUser.id } });
-        }
+        if (status === 'SUBSCRIBED') sendHello();
       });
+
+    // Повторяем запрос подключения каждые 2 секунды, пока видео не пойдёт —
+    // на случай, если первый «hello» потерялся
+    helloTimer = setInterval(() => {
+      if (liveRole === 'viewer' && !viewerConnected) sendHello();
+    }, 2000);
+  }
+}
+
+function sendHello() {
+  if (liveChannel && liveRole === 'viewer') {
+    liveChannel.send({ type: 'broadcast', event: 'hello', payload: { from: currentUser.id } });
   }
 }
 
 // --- Ведущий: новый зритель ---
 async function onViewerHello(p) {
   if (liveRole !== 'host' || !liveStream) return;
-  const pc = new RTCPeerConnection(RTC_CFG);
-  hostPcs.set(p.from, pc);
-  liveStream.getTracks().forEach(t => pc.addTrack(t, liveStream));
-  pc.onicecandidate = e => {
-    if (e.candidate) liveChannel.send({ type: 'broadcast', event: 'ice', payload: { to: p.from, cand: e.candidate } });
-  };
-  pc.onconnectionstatechange = () => {
-    if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
-      hostPcs.delete(p.from);
-    }
-  };
+
+  let pc = hostPcs.get(p.from);
+  if (!pc) {
+    pc = new RTCPeerConnection(RTC_CFG);
+    hostPcs.set(p.from, pc);
+    hostIceQueues.set(p.from, []);
+    liveStream.getTracks().forEach(t => pc.addTrack(t, liveStream));
+    pc.onicecandidate = e => {
+      if (e.candidate) liveChannel.send({ type: 'broadcast', event: 'ice', payload: { to: p.from, cand: e.candidate } });
+    };
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+        hostPcs.delete(p.from);
+        hostIceQueues.delete(p.from);
+      }
+    };
+  }
+
+  // Пересоздаём offer (важно, если зритель прислал hello повторно)
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
   liveChannel.send({ type: 'broadcast', event: 'offer', payload: { to: p.from, sdp: pc.localDescription } });
@@ -940,64 +1034,69 @@ async function onViewerAnswer(p) {
   if (liveRole !== 'host') return;
   const pc = hostPcs.get(p.from);
   if (!pc) return;
-  pendingIce = [];
   await pc.setRemoteDescription(new RTCSessionDescription(p.sdp));
-  pendingIce.forEach(c => pc.addIceCandidate(c).catch(console.error));
-  pendingIce = [];
+  flushIce(pc, hostIceQueues.get(p.from) || []);
 }
 
 // --- Зритель: предложение от ведущего ---
 async function onHostOffer(p) {
   if (liveRole !== 'viewer' || p.to !== currentUser.id) return;
-  gotOffer = true;
-  document.getElementById('live-status').textContent = '🔴 Эфир идёт';
+
+  if (viewerPc) { viewerPc.close(); viewerPc = null; }
+
   viewerPc = new RTCPeerConnection(RTC_CFG);
   viewerPc.ontrack = e => {
+    viewerConnected = true;
+    if (helloTimer) { clearInterval(helloTimer); helloTimer = null; }
     const v = document.getElementById('live-video');
     v.srcObject = e.streams[0];
     v.muted = false;
     v.play().catch(() => {});
+    document.getElementById('live-status').textContent = '🔴 Эфир идёт';
   };
   viewerPc.onicecandidate = e => {
-    if (e.candidate) liveChannel.send({ type: 'broadcast', event: 'ice', payload: { to: 'host', from: currentUser.id, cand: e.candidate } });
+    if (e.candidate) {
+      liveChannel.send({
+        type: 'broadcast', event: 'ice',
+        payload: { to: liveRoom, from: currentUser.id, cand: e.candidate }
+      });
+    }
   };
+
   await viewerPc.setRemoteDescription(new RTCSessionDescription(p.sdp));
-  pendingIce.forEach(c => viewerPc.addIceCandidate(c).catch(console.error));
-  pendingIce = [];
+  flushIce(viewerPc, viewerIceQueue);
+
   const ans = await viewerPc.createAnswer();
   await viewerPc.setLocalDescription(ans);
   liveChannel.send({ type: 'broadcast', event: 'answer', payload: { from: currentUser.id, sdp: viewerPc.localDescription } });
 }
 
-// --- ICE-кандидаты ---
-let pendingIce = [];
+// --- ICE-кандидаты: адресация и очереди ---
 function onLiveIce(p) {
-  const isHost = liveRole === 'host';
-  if (isHost && p.to !== currentUser.id) return;
-  if (!isHost && p.to !== currentUser.id) return;
-
-  let pc;
-  if (isHost) {
-    if (p.from === 'host') return;
-    pc = hostPcs.get(p.from);
-  } else {
-    if (p.from === currentUser.id) return;
-    pc = viewerPc;
-  }
-  if (!pc) return;
-  if (pc.remoteDescription) {
-    pc.addIceCandidate(p.cand).catch(console.error);
-  } else {
-    pendingIce.push(p.cand);
+  if (liveRole === 'host') {
+    if (p.to !== currentUser.id) return;
+    let queue = hostIceQueues.get(p.from);
+    if (!queue) { queue = []; hostIceQueues.set(p.from, queue); }
+    pushIce(hostPcs.get(p.from), queue, p.cand);
+  } else if (liveRole === 'viewer') {
+    if (p.to !== currentUser.id) return;
+    pushIce(viewerPc, viewerIceQueue, p.cand);
   }
 }
 
-// --- Чат эфира ---
+// --- Чат эфира: общий, пишут только зрители ---
 function sendLiveChat() {
+  // Ведущий писать не может
+  if (liveRole !== 'viewer') return;
   const input = document.getElementById('live-chat-input');
   const text = input.value.trim();
   if (!text || !liveChannel) return;
-  liveChannel.send({ type: 'broadcast', event: 'chat', payload: { from: currentUser.id, name: state.me.name, text } });
+  liveChannel.send({
+    type: 'broadcast', event: 'chat',
+    payload: { from: currentUser.id, name: state.me.name, text }
+  });
+  // своё сообщение показываем сразу — broadcast не возвращается отправителю
+  renderLiveChat(state.me.name, text, true);
   input.value = '';
 }
 
@@ -1011,24 +1110,34 @@ function renderLiveChat(name, text, me) {
   box.scrollTop = box.scrollHeight;
 }
 
+document.getElementById('live-chat-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') sendLiveChat();
+});
+
 // --- Выход из эфира ---
 async function leaveLive() {
   if (liveRole === 'host') {
     if (liveIndexChannel) liveIndexChannel.untrack();
     hostPcs.forEach(pc => pc.close());
     hostPcs.clear();
+    hostIceQueues.clear();
     if (liveStream) { liveStream.getTracks().forEach(t => t.stop()); liveStream = null; }
   }
   if (liveRole === 'viewer') {
     if (viewerPc) { viewerPc.close(); viewerPc = null; }
   }
+  if (helloTimer) { clearInterval(helloTimer); helloTimer = null; }
   if (liveChannel) { sb.removeChannel(liveChannel); liveChannel = null; }
   liveRole = null;
   liveRoom = null;
-  pendingIce = [];
+  viewerIceQueue = [];
+  viewerConnected = false;
 
   const v = document.getElementById('live-video');
   if (v) v.srcObject = null;
+
+  const chatRow = document.getElementById('live-chat-row');
+  if (chatRow) chatRow.classList.remove('hidden');
 
   const wrap = document.getElementById('live-video-wrap');
   if (wrap) wrap.classList.add('hidden');
@@ -1065,6 +1174,8 @@ async function leaveLive() {
         photo: p.photo || null
       } : { name: 'Без имени' });
     }
+    await loadIncomingLikes();
     if (state.me) enterApp();
   }
+  // Если сессии нет — остаётся приветственный экран
 })();
