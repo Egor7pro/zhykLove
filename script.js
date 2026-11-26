@@ -19,7 +19,6 @@ async function loadProfiles() {
     name: p.name || 'Без имени',
     age: p.age || 18,
     country: p.country || '',
-    region: p.region || '',
     city: p.city || 'Не указан',
     bio: p.bio || '',
     gender: p.gender,
@@ -45,7 +44,7 @@ function personAvaHtml(u) {
 const PHOTO_MAX = 400;
 
 // ---- Состояние ----
-const STATE_VERSION = 18;
+const STATE_VERSION = 19;
 
 function stateKey() {
   return 'zhyklove_v' + STATE_VERSION + '_' + (currentUser ? currentUser.id : 'guest');
@@ -63,10 +62,10 @@ function defaultState() {
 
 function defaultMe() {
   return {
-    name: '', age: 18, gender: 'f', seeking: 'f',
-    country: 'Россия', region: '', city: '',
-    goal: 'flirt', marital: 'single', smoke: 'no', drink: 'no',
-    bio: '', photo: null
+    name: '', age: 18, gender: 'f',
+    country: 'Россия', city: '',
+    bio: '', photo: null,
+    prefMin: 18, prefMax: 99   // выбранный возраст партнёра
   };
 }
 
@@ -279,14 +278,8 @@ async function login() {
       name: p.name || email.split('@')[0],
       age: p.age || 18,
       gender: p.gender || 'f',
-      seeking: p.seeking || 'f',
       country: p.country || 'Россия',
-      region: p.region || '',
       city: p.city || '',
-      goal: p.goal || 'flirt',
-      marital: p.marital || 'single',
-      smoke: p.smoke || 'no',
-      drink: p.drink || 'no',
       bio: p.bio || '',
       photo: p.photo || null
     } : { name: email.split('@')[0] });
@@ -368,7 +361,7 @@ function updateBadges() {
 async function likeUser(targetId) {
   targetId = String(targetId);
 
-  // ФИКС: лайкать самого себя нельзя — иначе получается матч и чат с самим собой
+  // Лайкать самого себя нельзя
   if (currentUser && targetId === String(currentUser.id)) return false;
 
   const { error } = await sb.from('likes').insert({
@@ -457,25 +450,44 @@ async function decideLike(likerId, accept) {
 }
 
 // ---- Лента анкет ----
+
+// Отбрасываем свою анкету
 function allPeople() {
   const myId = currentUser && currentUser.id;
   return dbProfiles.filter(p => p.id !== myId);
 }
 
+// Кого показывать в ленте:
+// - гость: все анкеты
+// - зарегистрированный: противоположный пол, та же страна, тот же город,
+//   возраст в выбранном диапазоне
 function candidates() {
-  let list = allPeople()
+  const list = allPeople()
     .filter(u => u.id && !state.seen.includes(String(u.id)));
-  // У гостя нет анкеты — показываем все анкеты без фильтра по полу
-  if (state.me && state.me.seeking) {
-    list = list.filter(u => u.gender === state.me.seeking);
-  }
-  return list;
+
+  const me = state.me;
+  if (!me) return list;
+
+  const myCountry = (me.country || '').trim().toLowerCase();
+  const myCity = (me.city || '').trim().toLowerCase();
+  const min = Math.min(me.prefMin || 18, me.prefMax || 99);
+  const max = Math.max(me.prefMin || 18, me.prefMax || 99);
+
+  return list.filter(u => {
+    // противоположный пол
+    if (!u.gender || u.gender === me.gender) return false;
+    // та же страна
+    if (myCountry && (u.country || '').trim().toLowerCase() !== myCountry) return false;
+    // тот же город
+    if (myCity && (u.city || '').trim().toLowerCase() !== myCity) return false;
+    // возраст в выбранном диапазоне
+    if (u.age < min || u.age > max) return false;
+    return true;
+  });
 }
 
 // Поставить лайк конкретному человеку (используется и после регистрации)
 async function doLike(id) {
-  // ФИКС: если после регистрации выяснилось, что лайкнули свою анкету —
-  // просто возвращаемся в ленту без матча
   if (currentUser && String(id) === String(currentUser.id)) {
     renderHome();
     return;
@@ -496,8 +508,11 @@ function renderHome() {
   const box = document.getElementById('screen-home');
   const list = candidates();
   if (!list.length) {
+    const hint = currentUser
+      ? 'В твоём городе подходящих анкет пока нет.<br>Проверь страну и город в профиле — и заглядывай позже!'
+      : 'Анкеты закончились 🎉';
     box.innerHTML = `
-      <div class="empty">Анкеты закончились 🎉</div>
+      <div class="empty">${hint}</div>
       <button class="btn-main" style="margin-top:16px" onclick="restartFeed()">🔄 Смотреть заново</button>`;
     return;
   }
@@ -517,7 +532,7 @@ async function swipe(like) {
   const u = candidates()[0];
   if (!u) return;
 
-  // ФИКС: зарегистрированный пользователь не может лайкнуть свою анкету
+  // Зарегистрированный пользователь не может лайкнуть свою анкету
   if (like && currentUser && String(u.id) === String(currentUser.id)) {
     state.seen.push(String(u.id));
     save();
@@ -627,14 +642,10 @@ function renderProfile() {
   document.getElementById('prof-name').value = me.name;
   document.getElementById('prof-age').value = me.age;
   document.getElementById('prof-country').value = me.country || 'Россия';
-  document.getElementById('prof-region').value = me.region || '';
   document.getElementById('prof-city').value = me.city || '';
   document.getElementById('prof-gender').value = me.gender;
-  document.getElementById('prof-seeking').value = me.seeking;
-  document.getElementById('prof-goal').value = me.goal || 'flirt';
-  document.getElementById('prof-marital').value = me.marital || 'single';
-  document.getElementById('prof-smoke').value = me.smoke || 'no';
-  document.getElementById('prof-drink').value = me.drink || 'no';
+  document.getElementById('pref-min').value = me.prefMin || 18;
+  document.getElementById('pref-max').value = me.prefMax || 99;
   document.getElementById('prof-bio').value = me.bio || '';
   document.getElementById('prof-note').textContent = '';
   updateBioCount();
@@ -659,14 +670,8 @@ async function saveProfileToDb() {
     name: me.name,
     age: me.age,
     gender: me.gender,
-    seeking: me.seeking,
     country: me.country,
-    region: me.region,
     city: me.city,
-    goal: me.goal,
-    marital: me.marital,
-    smoke: me.smoke,
-    drink: me.drink,
     bio: me.bio,
     emoji: avaInitial(me.name),
     photo: me.photo
@@ -681,6 +686,7 @@ async function saveProfile() {
   const name = document.getElementById('prof-name').value.trim();
   const age = +document.getElementById('prof-age').value;
   const bio = document.getElementById('prof-bio').value;
+
   if (!name || !age || age < 18) {
     document.getElementById('prof-note').textContent = 'Имя и возраст (18+) обязательны';
     return;
@@ -689,25 +695,33 @@ async function saveProfile() {
     document.getElementById('prof-note').textContent = 'О себе — не больше 120 символов';
     return;
   }
+
+  let prefMin = +document.getElementById('pref-min').value || 18;
+  let prefMax = +document.getElementById('pref-max').value || 99;
+  if (prefMin < 18) prefMin = 18;
+  if (prefMax > 99) prefMax = 99;
+  if (prefMin > prefMax) [prefMin, prefMax] = [prefMax, prefMin];
+
   const me = state.me;
   me.name = name;
   me.age = age;
   me.country = document.getElementById('prof-country').value;
-  me.region = document.getElementById('prof-region').value.trim();
   me.city = document.getElementById('prof-city').value.trim();
   me.gender = document.getElementById('prof-gender').value;
-  me.seeking = document.getElementById('prof-seeking').value;
-  me.goal = document.getElementById('prof-goal').value;
-  me.marital = document.getElementById('prof-marital').value;
-  me.smoke = document.getElementById('prof-smoke').value;
-  me.drink = document.getElementById('prof-drink').value;
   me.bio = bio.trim();
+  me.prefMin = prefMin;
+  me.prefMax = prefMax;
   save();
 
   await saveProfileToDb();
   await loadProfiles();
   updateAvas();
   document.getElementById('prof-note').textContent = 'Профиль сохранён ✅';
+
+  // Возвращаемся в ленту с новым подбором
+  state.seen = [];
+  save();
+  showScreen('home');
 }
 
 document.getElementById('prof-bio').addEventListener('input', updateBioCount);
@@ -735,7 +749,7 @@ function renderChats() {
 
 async function openChat(id) {
   if (!currentUser) return;
-  // ФИКС: чат с самим собой невозможен
+  // Чат с самим собой невозможен
   if (String(id) === String(currentUser.id)) return;
   currentChat = String(id);
   showScreen('chat');
@@ -1162,14 +1176,8 @@ async function leaveLive() {
         name: p.name || 'Без имени',
         age: p.age || 18,
         gender: p.gender || 'f',
-        seeking: p.seeking || 'f',
         country: p.country || 'Россия',
-        region: p.region || '',
         city: p.city || '',
-        goal: p.goal || 'flirt',
-        marital: p.marital || 'single',
-        smoke: p.smoke || 'no',
-        drink: p.drink || 'no',
         bio: p.bio || '',
         photo: p.photo || null
       } : { name: 'Без имени' });
